@@ -1,0 +1,21 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/drowsiness_db
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+jwt:
+  secret: dGhpcy1pcy1hLXNlY3JldC1rZXktZm9yLWRyb3dzaW5lc3MtYWxlcnQtc3lzdGVtLXByb2plY3Q=
+  access-token-expiration: 900000 # 15 minutes in milliseconds
+  refresh-token-expiration: 604800000 # 7 days in milliseconds
