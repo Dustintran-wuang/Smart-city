@@ -7,18 +7,21 @@
 #define YELLOW_LIGHT 22
 #define GREEN_LIGHT 23
 
-unsigned int timeRed = 5;
-unsigned int timeYellow = 2;
-unsigned int timeGreen = 4;
+unsigned long timeRed = 5;
+unsigned long timeYellow = 2;
+unsigned long timeGreen = 4;
 
 const char* ssid = "Wokwi-GUEST"; //Chạy giả lập 
 const char* password = "";        //Chạy giả lập
 const char* mqtt_server = "a46f7c1729084df7bcd94b64791d9897.s1.eu.hivemq.cloud";
 const int mqtt_port = 8883;
 const char* mqtt_user = "phamtung";
-const char* mqtt_pass = "...";
+const char* mqtt_pass = "Tung@123";
 
-const char* sub_topic = "iot/traffic_light/config";
+// MQTT Topics
+const char* cmd_topic = "iot/traffic/device_01/cmd";              
+const char* heartbeat_topic = "iot/traffic/device_01/heartbeat";  
+const char* status_topic = "iot/traffic/device_01/status";
 
 WiFiClientSecure espClient;
 PubSubClient client(espClient);
@@ -29,6 +32,10 @@ TrafficState currentState = STATE_RED;
 //millis nên xài kiểu dữ liệu long để tránh tràn dữ liệu
 unsigned long previousMillis = 0;            //kiểm tra currentMillis chạy đến ở chu kỳ trước
 unsigned long currentPeriod = timeRed * 1000; //đổi sang miligiây
+
+// Biến quản lý thời gian gửi Heartbeat
+unsigned long previousHeartbeatMillis = 0;
+const unsigned long heartbeatInterval = 5000; // Cứ 5 giây gửi Heartbeat 1 lần
 
 void setup_wifi() {
   delay(10);
@@ -49,7 +56,7 @@ void callback(char* topic, byte* payload, unsigned int  length) {
 
   String messageTemp = "";
 
-  //Phần này được sử dụng để chuyển đổi từ Byte sang string dựa trên length ???
+  //Phần này được sử dụng để chuyển đổi từ Byte sang string dựa trên length
   for (int i = 0; i < length; i++) {
     messageTemp += (char)payload[i]; //Ép chuyển đổi sang kiểu dữ liệu mà chương trình có thể đọc được
   }
@@ -86,13 +93,15 @@ void reconnect() {
   while (!client.connected()) {
     Serial.print("Connecting to MQTT Broker...");
     String clientId = "ESP32_Tung_";
-    clientId += String (random(0, 0xffff), HEX); //???
+
+    //Cấp cấu hình id khác nhau cho ESP32 khi truy cập bằng giao thức MQTT (tránh conflict nếu nhiều người sử dụng)
+    clientId += String (random(0, 0xffff), HEX); 
 
     if(client.connect(clientId.c_str(), mqtt_user, mqtt_pass)) {
       Serial.println("Thành công");
 
-      client.subscribe (sub_topic);
-      Serial.printf("Đã subcribe kênh: %s\n", sub_topic);
+      client.subscribe (cmd_topic);
+      Serial.printf("Đã subscribe kênh: %s\n", cmd_topic);
     } else {
       Serial.print("Thất bại, mã lỗi rc=");
       Serial.print(client.state());
@@ -100,6 +109,24 @@ void reconnect() {
       delay(5000);
     }
   }
+}
+
+void report_status(String state_name, unsigned long duration) {
+  JsonDocument doc;
+  doc["active_light"] = state_name;  
+  doc["duration_sec"] = duration;   
+
+  //Cần test thực tế do giả lập chỉ in ra một giá trị nhất định
+  doc["hardware_temp"] = temperatureRead(); 
+
+  char buffer[128];
+  serializeJson(doc, buffer);       
+  client.publish(status_topic, buffer);
+  
+  client.publish(status_topic, buffer);
+
+  Serial.printf("[STATUS REPORT] Đã báo cáo lên Cloud: %s (%lu giây)\n", state_name.c_str(), duration);
+  Serial.printf("Nhiệt độ chip lúc báo cáo: %.2f *C\n", temperatureRead());
 }
 
 void setup() {
@@ -124,7 +151,14 @@ void loop() {
   
   //khác với delay() thì millis() chạy như là một đồng hồ dưới nền không ảnh hưởng hẳng tới phần cứng như delay() 
   //vì vậy nó được sử dụng như là một hàm điều kiện hơn
-  unsigned int currentMillis = millis(); 
+  unsigned long currentMillis = millis(); 
+
+  // Phần chịu trách nhiệm heartbeat
+  if (currentMillis - previousHeartbeatMillis >= heartbeatInterval) {
+    previousHeartbeatMillis = currentMillis;
+    client.publish(heartbeat_topic, "ping");
+    Serial.println("[HEARTBEAT] Đã gửi tín hiệu 'ping' giữ kết nối.");
+  }
 
   if (currentMillis - previousMillis >= currentPeriod) {
     previousMillis = currentMillis;
@@ -133,6 +167,8 @@ void loop() {
       currentState = STATE_GREEN;
       currentPeriod = timeGreen * 1000;
       Serial.println("Green turned on");
+
+      report_status("GREEN", timeGreen);
     }
 
     else if(currentState == STATE_GREEN) {
@@ -140,6 +176,7 @@ void loop() {
       currentPeriod = timeYellow * 1000;
       Serial.println("Yellow turned on");
 
+      report_status("YELLOW", timeYellow);
     }
 
     else if(currentState == STATE_YELLOW) {
@@ -147,6 +184,7 @@ void loop() {
       currentPeriod = timeRed * 1000;
       Serial.println("Red turned on");
 
+      report_status("RED", timeRed);
     } 
   }
 
