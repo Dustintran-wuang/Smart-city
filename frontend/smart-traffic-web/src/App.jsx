@@ -1,118 +1,195 @@
-import React, { useState } from 'react';
-import hinhBieuDo from './assets/interface.png';
+import React, { useState, useEffect } from 'react';
 import CameraApp from './CameraApp.jsx';
+import axiosClient from './api/axiosClient.js';
+import AlertLog from './AlertLog.jsx';
+import Auth from './Auth.jsx';
+import DeviceLog from './DeviceLog';
+import {
+    Chart as ChartJS,
+    CategoryScale,
+    LinearScale,
+    BarElement,
+    Title,
+    Tooltip,
+    Legend,
+} from 'chart.js';
+import { Bar } from 'react-chartjs-2';
+
+ChartJS.register(
+    CategoryScale,
+    LinearScale,
+    BarElement,
+    Title,
+    Tooltip,
+    Legend
+);
 
 const App = () => {
-    const [soXe, setSoXe] = useState(69);
-    const [canhBao, setCanhBao] = useState(13);
-    const [trangThai, setTrangThai] = useState("NGỦ GẬT");
+    const [soXe, setSoXe] = useState(0);
+    const [canhBao, setCanhBao] = useState(0);
+    const [trangThai, setTrangThai] = useState("");
     const [isAuto, setIsAuto] = useState(true);
     const [denHienTai, setDenHienTai] = useState('RED');
     const [isLogOpen, setIsLogOpen] = useState(false);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
-    const [authMode, setAuthMode] = useState('login');
-    const [username, setUsername] = useState('');
-    const [password, setPassword] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState('');
+    const [userInfo, setUserInfo] = useState({});
+    const [isDeviceLogOpen, setIsDeviceLogOpen] = useState(false);
+    const [danhSachThietBi, setDanhSachThietBi] = useState([
+        {
+            id: 1,
+            deviceCode: "ESP32-CAM-01",
+            deviceType: "CAMERA",
+            location: "Bla bla",
+            isActive: true,
+            lastHeartbeat: "2026-06-25T14:32:10"
+        },
+        {
+            id: 2,
+            deviceCode: "LED-01",
+            deviceType: "TRAFFIC_LIGHT",
+            location: "^$(#$@)(%)@",
+            isActive: true,
+            lastHeartbeat: "2026-06-25T14:32:10"
+        },
+        {
+            id: 3,
+            deviceCode: "BUZZER-02",
+            deviceType: "BUZZER",
+            location: "Lmao",
+            isActive: false,
+            lastHeartbeat: "2026-06-25T10:15:05"
+        }
+    ]);
 
-    const lichSuCanhBao = [
-        { id: 1, thoiGian: '14:30:05', loi: 'Ngủ gật (Mắt nhắm > 3s)' },
-        { id: 2, thoiGian: '13:15:20', loi: 'Không tập trung (Quay mặt đi)' },
-        { id: 3, thoiGian: '10:45:12', loi: 'Ngáp dài liên tục' },
-        { id: 4, thoiGian: '09:20:00', loi: 'Ngủ gật (Mắt nhắm > 3s)' },
-        { id: 5, thoiGian: '08:05:10', loi: 'Không thấy mặt tài xế' },
-        { id: 6, thoiGian: '07:30:00', loi: 'Hệ thống bắt đầu chạy' },
-    ];
+    const tongSoThietBi = danhSachThietBi.length;
+    const soThietBiConnected = danhSachThietBi.filter(device => device.isActive).length;
 
-    const xuLyDangNhập = (e) => {
-        e.preventDefault();
-        if (username === 'admin' && password === '123456') {
-            setIsLoggedIn(true);
-        } else {
-            alert("Sai tài khoản hoặc mật khẩu rồi em ơi (Thử: admin / 123456)");
+    const [duLieuBieuDo, setDuLieuBieuDo] = useState([
+        { hour: 7, count: 1 },
+        { hour: 8, count: 4 },
+        { hour: 9, count: 7 },
+        { hour: 10, count: 3 },
+        { hour: 11, count: 0 },
+        { hour: 12, count: 1 },
+        { hour: 13, count: 5 },
+        { hour: 14, count: 9 },
+        { hour: 15, count: 4 },
+        { hour: 16, count: 2 },
+        { hour: 17, count: 1 }]);
+
+    useEffect(() => {
+        const kiemTraDangNhap = async () => {
+            const token = localStorage.getItem('access_token');
+
+            if (token) {
+                if (token === "fake_token_xin_vcl") {
+                    const thongTinXin = JSON.parse(localStorage.getItem('user_info'));
+                    setUserInfo(thongTinXin);
+                    setIsLoggedIn(true);
+                    return;
+                }
+
+                try {
+                    const response = await axiosClient.get('/auth/me');
+
+                    const thongTinXin = response.data.data;
+                    setUserInfo(thongTinXin);
+
+                    localStorage.setItem('user_info', JSON.stringify(thongTinXin));
+
+                    setIsLoggedIn(true);
+
+                } catch (error) {
+                    console.error("Phiên đăng nhập không hợp lệ");
+
+                    localStorage.removeItem('access_token');
+                    localStorage.removeItem('refresh_token');
+                    localStorage.removeItem('user_info');
+
+                    setIsLoggedIn(false);
+                }
+            }
+        };
+
+        kiemTraDangNhap();
+    }, []);
+
+    useEffect(() => {
+        if (!isLoggedIn) return;
+
+        const kiemTraKetNoi = async () => {
+            try {
+                const response = await axiosClient.get('/devices');
+
+                if (response.data) {
+                    setDanhSachThietBi(response.data);
+                }
+
+            } catch (error) {
+                console.error("Lỗi khi kết nối", error);
+            }
+        };
+
+        kiemTraKetNoi();
+
+        const intervalId = setInterval(kiemTraKetNoi, 5000);
+
+        return () => clearInterval(intervalId);
+
+    }, [isLoggedIn]);
+
+    const xuLyDangXuat = async () => {
+        try {
+            const theDuPhong = localStorage.getItem('refresh_token');
+
+            if (theDuPhong) {
+                axiosClient.post('/auth/logout', {
+                    refreshToken: theDuPhong
+                }).catch(err => console.error("Lỗi ngầm khi logout:", err));
+            }
+        } catch (error) {
+            console.error("Lỗi khi gọi API đăng xuất:", error);
+
+        } finally {
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('refresh_token');
+            localStorage.removeItem('user_info');
+
+            setIsLoggedIn(false);
         }
     };
 
-    const xuLyDangKy = (e) => {
-        e.preventDefault();
-        if (password !== confirmPassword) {
-            alert("Mật khẩu xác nhận không trùng khớp em ơi");
-            return;
-        }
-        alert("Đăng ký thành công, quay lại đăng nhập đi em.");
-        setAuthMode('login');
-        setConfirmPassword('');
-    };
+    useEffect(() => {
+        const fetchDashboardStats = async () => {
+            try {
+                const response = await axiosClient.get('/dashboard/stats');
+                const dataFromServer = response.data;
+
+                //setSoXe(dataFromServer);
+                setCanhBao(dataFromServer.totalAlertsToday);
+                if (dataFromServer.alertsByHour) {
+                    setDuLieuBieuDo(dataFromServer.alertsByHour);
+                }
+            } catch (error) {
+                console.error("Lỗi khi lấy dữ liệu thống kê dashboard:", error);
+            }
+        };
+
+        fetchDashboardStats();
+
+        const intervalId = setInterval(fetchDashboardStats, 10000);
+
+        return () => clearInterval(intervalId);
+
+    }, []);
 
     // Nếu Chưa đăng nhập
     if (!isLoggedIn) {
         return (
-            <div style={{
-                backgroundColor: '#000', minHeight: '100vh', display: 'flex',
-                justifyContent: 'center', alignItems: 'center', fontFamily: 'Arial, sans-serif', color: 'white'
-            }}>
-                <div style={{
-                    backgroundColor: '#111', padding: '40px', borderRadius: '15px',
-                    border: '2px solid #333', width: '350px', boxShadow: '0 0 20px rgba(0, 255, 0, 0.1)'
-                }}>
-                    <h2 style={{ textAlign: 'center', color: '#00ff00', marginBottom: '30px', letterSpacing: '2px' }}>
-                        {authMode === 'login' ? 'ĐĂNG NHẬP HỆ THỐNG' : 'ĐĂNG KÝ TÀI KHOẢN'}
-                    </h2>
-
-                    <form onSubmit={authMode === 'login' ? xuLyDangNhập : xuLyDangKy} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                        <div>
-                            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: '#aaa' }}>Tên đăng nhập:</label>
-                            <input
-                                type="text"
-                                value={username}
-                                onChange={(e) => setUsername(e.target.value)}
-                                required
-                                style={{ width: '100%', padding: '10px', borderRadius: '5px', border: '1px solid #444', backgroundColor: '#222', color: 'white', boxSizing: 'border-box' }}
-                            />
-                        </div>
-
-                        <div>
-                            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: '#aaa' }}>Mật khẩu:</label>
-                            <input
-                                type="password"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                required
-                                style={{ width: '100%', padding: '10px', borderRadius: '5px', border: '1px solid #444', backgroundColor: '#222', color: 'white', boxSizing: 'border-box' }}
-                            />
-                        </div>
-
-                        {authMode === 'register' && (
-                            <div>
-                                <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: '#aaa' }}>Xác nhận mật khẩu:</label>
-                                <input
-                                    type="password"
-                                    value={confirmPassword}
-                                    onChange={(e) => setConfirmPassword(e.target.value)}
-                                    required
-                                    style={{ width: '100%', padding: '10px', borderRadius: '5px', border: '1px solid #444', backgroundColor: '#222', color: 'white', boxSizing: 'border-box' }}
-                                />
-                            </div>
-                        )}
-
-                        <button type="submit" style={{
-                            backgroundColor: '#00ff00', color: 'black', border: 'none', padding: '12px',
-                            borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer', fontSize: '16px', marginTop: '10px',
-                            transition: '0.3s', boxShadow: '0 4px 10px rgba(0, 255, 0, 0.3)'
-                        }}>
-                            {authMode === 'login' ? 'ĐĂNG NHẬP' : 'ĐĂNG KÝ'}
-                        </button>
-                    </form>
-
-                    <div style={{ textAlign: 'center', marginTop: '20px', fontSize: '14px', color: '#888' }}>
-                        {authMode === 'login' ? (
-                            <span>Chưa có tài khoản? <b onClick={() => setAuthMode('register')} style={{ color: '#00ff00', cursor: 'pointer' }}>Đăng ký ngay</b></span>
-                        ) : (
-                            <span>Đã có tài khoản? <b onClick={() => setAuthMode('login')} style={{ color: '#00ff00', cursor: 'pointer' }}>Đăng nhập</b></span>
-                        )}
-                    </div>
-                </div>
-            </div>
+            <Auth
+                setIsLoggedIn={setIsLoggedIn}
+                setUserInfo={setUserInfo}
+            />
         );
     }
 
@@ -121,6 +198,34 @@ const App = () => {
             setDenHienTai(mauDen);
         } else {
             alert("Hệ thống đang AUTO. tắt AUTO để điều khiển bằng chân");
+        }
+    };
+
+    const chartData = {
+        labels: duLieuBieuDo.map(item => `${item.hour}h`),
+        datasets: [
+            {
+                label: 'Số lần cảnh báo',
+                data: duLieuBieuDo.map(item => item.count),
+                backgroundColor: 'rgba(255, 99, 132, 0.7)',
+                borderColor: 'rgba(255, 99, 132, 1)',
+                borderWidth: 1,
+            }
+        ]
+    };
+
+    const chartOptions = {
+        responsive: true,
+        plugins: {
+            legend: { position: 'top' },
+            title: {
+                display: true,
+                text: 'Thống kê cảnh báo theo giờ trong ngày',
+                font: { size: 16 }
+            }
+        },
+        scales: {
+            y: { beginAtZero: true, ticks: { stepSize: 1 } }
         }
     };
 
@@ -135,42 +240,74 @@ const App = () => {
             {/*HEader*/}
             <div style={{ gridColumn: '1 / span 2', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #222', paddingBottom: '10px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{ width: '15px', height: '15px', borderRadius: '50%', backgroundColor: '#00ff00' }}></div>
-                    <span style={{ fontSize: '18px', fontWeight: 'bold' }}>MQTT: <span style={{ color: '#00ff00' }}>Đã kết nối</span></span>
+                    {/* XANH: ÍT NHẤT 1 TB CHẠY, ĐỎ: 0 TBCHẠY*/}
+                    <div style={{
+                        width: '15px', height: '15px', borderRadius: '50%',
+                        backgroundColor: soThietBiConnected > 0 ? '#00ff00' : 'red',
+                        boxShadow: soThietBiConnected > 0 ? '0 0 8px #00ff00' : '0 0 8px red'
+                    }}></div>
+
+                    <span style={{ fontSize: '18px', fontWeight: 'bold', color: 'white' }}>
+                        {/*bUTTON THIẾT BỊ*/}
+                        <button
+                            onClick={() => setIsDeviceLogOpen(true)}
+                            style={{
+                                background: 'none', border: 'none',
+                                color: '#00ff00', fontSize: '18px', fontWeight: 'bold',
+                                cursor: 'pointer', padding: 0, textDecoration: 'underline',
+                                marginRight: '6px', display: 'inline-block', transition: '0.2s'
+                            }}
+                            onMouseOver={(e) => e.target.style.color = '#f6ad55'}
+                            onMouseOut={(e) => e.target.style.color = '#00ff00'}
+                        >
+                            Thiết bị:
+                        </button>
+                        {/* x/y đã kết nối */}
+                        <span>{soThietBiConnected}/{tongSoThietBi} đã kết nối</span>
+                    </span>
                 </div>
+
                 <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                     <button
-                        onClick={() => {
-                            setIsLoggedIn(false);
-                            setUsername('');
-                            setPassword('');
-                        }}
+                        onClick={xuLyDangXuat}
                         style={{ backgroundColor: '#222', color: '#ff4444', border: '1px solid #ff4444', padding: '6px 12px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px', transition: '0.3s' }}
                     >
                         ĐĂNG XUẤT
                     </button>
-                    <span style={{ fontSize: '20px', fontWeight: 'bold' }}>USER</span>
+                    <span style={{ fontSize: '20px', fontWeight: 'bold' }}>
+                        {userInfo.username ? userInfo.username.toUpperCase() : 'USER'}
+                    </span>
                     <div style={{ width: '30px', height: '30px', borderRadius: '50%', backgroundColor: '#ccc', border: '3px solid white' }}></div>
                 </div>
             </div>
 
             {/* BÊN TRÁI: BIỂU ĐỒ */}
-            <div style={{ backgroundColor: 'white', borderRadius: '10px', padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', alignSelf: 'start' }}>
-                <img src={hinhBieuDo} alt="Chart" style={{ width: '100%', height: '320px' }} />
+            <div style={{ backgroundColor: 'white', borderRadius: '10px', padding: '20px', height: '350px', display: 'flex', alignItems: 'center', justifyContent: 'center', alignSelf: 'start', width: '100%', boxSizing: 'border-box' }}>
+                {duLieuBieuDo.length > 0 ? (
+                    <Bar data={chartData} options={chartOptions} />
+                ) : (
+                    <span style={{ color: '#555' }}>Chưa có dữ liệu cảnh báo hoặc đang tải...</span>
+                )}
             </div>
 
             {/* BÊN PHẢI: CAMERA & THÔNG SỐ */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
                 <div style={{ backgroundColor: '#000', border: '5px solid white', height: '350px', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <span style={{ fontSize: '20px', color: '#aaa' }}> [ CAMERA ĐANG TẠM ẨN ] </span>
+                    <div style={{
+                        backgroundColor: '#000',
+                        border: '5px solid white',
+                        boxSizing: 'border-box',
+                        height: '350px',
+                        width: '100%',
+                        position: 'relative',
+                        overflow: 'hidden'
+                    }}>
+                        <CameraApp />
                     </div>
-                    {/* <CameraApp /> */}
-                    <div style={{ position: 'absolute', top: 10, left: 10, borderLeft: '4px solid white', borderTop: '4px solid white', width: 30, height: 30 }}></div>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', alignSelf: 'start' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                             <div style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: 'red' }}></div>
@@ -189,18 +326,26 @@ const App = () => {
                     {/* KHU VỰC ĐIỀU KHIỂN */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
                         {/* NÚT LOG */}
-                        <div
+                        <button
                             onClick={() => setIsLogOpen(true)}
                             style={{
-                                width: '60px', height: '60px', backgroundColor: '#333',
-                                borderRadius: '10px', display: 'flex', alignItems: 'center',
-                                justifyContent: 'center', fontSize: '30px', cursor: 'pointer',
-                                border: '2px solid white', boxShadow: '0 4px 6px rgba(0,0,0,0.5)', alignSelf: 'start'
+                                width: '60px', height: '60px',
+                                backgroundColor: '#333',
+                                color: 'white',
+                                borderRadius: '10px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '30px',
+                                cursor: 'pointer',
+                                border: '2px solid white',
+                                boxShadow: '0 4px 6px rgba(0,0,0,0.5)',
+                                alignSelf: 'start'
                             }}
                             title="Xem lịch sử cảnh báo"
                         >
                             📄
-                        </div>
+                        </button>
 
                         {/* Đèn & Auto */}
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '15px', alignSelf: 'start' }}>
@@ -227,34 +372,14 @@ const App = () => {
 
             {/* POPUP LỊCH SỬ VI PHẠM */}
             {isLogOpen && (
-                <div style={{
-                    position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
-                    backgroundColor: 'rgba(0, 0, 0, 0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999
-                }}>
-                    <div style={{
-                        backgroundColor: '#111', width: '500px', maxHeight: '70vh',
-                        borderRadius: '15px', border: '2px solid #555', display: 'flex', flexDirection: 'column'
-                    }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '20px', borderBottom: '1px solid #333' }}>
-                            <h2 style={{ margin: 0, color: '#f6ad55' }}>LỊCH SỬ CẢNH BÁO</h2>
-                            <button
-                                onClick={() => setIsLogOpen(false)}
-                                style={{ backgroundColor: 'red', color: 'white', border: 'none', padding: '5px 15px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}
-                            >
-                                ĐÓNG X
-                            </button>
-                        </div>
+                <AlertLog
+                    setIsLogOpen={setIsLogOpen}
+                />
+            )}
 
-                        <div style={{ padding: '20px', overflowY: 'auto' }}>
-                            {lichSuCanhBao.map((item) => (
-                                <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px dashed #444' }}>
-                                    <span style={{ color: '#a0aec0', fontWeight: 'bold' }}>{item.thoiGian}</span>
-                                    <span style={{ color: '#fc8181' }}>{item.loi}</span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
+            {/* POPUP DEVICES LOG */}
+            {isDeviceLogOpen && (
+                <DeviceLog danhSachThietBi={danhSachThietBi} setIsDeviceLogOpen={setIsDeviceLogOpen} />
             )}
 
         </div>
