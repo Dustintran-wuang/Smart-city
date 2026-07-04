@@ -4,6 +4,7 @@ import axiosClient from './api/axiosClient.js';
 import AlertLog from './AlertLog.jsx';
 import Auth from './Auth.jsx';
 import DeviceLog from './DeviceLog';
+import Chatbot from './Chatbot.jsx';
 import {
     Chart as ChartJS,
     CategoryScale,
@@ -317,10 +318,6 @@ const App = () => {
                             <div style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: 'white' }}></div>
                             <span style={{ fontSize: '20px' }}>Tổng số lần cảnh báo hôm nay: <b>{canhBao}</b></span>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <div style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: 'white' }}></div>
-                            <span style={{ fontSize: '20px' }}>Tổng số xe hôm nay: <b>{soXe}</b></span>
-                        </div>
                     </div>
 
                     {/* KHU VỰC ĐIỀU KHIỂN */}
@@ -381,6 +378,8 @@ const App = () => {
             {isDeviceLogOpen && (
                 <DeviceLog danhSachThietBi={danhSachThietBi} setIsDeviceLogOpen={setIsDeviceLogOpen} />
             )}
+
+            <Chatbot />
 
         </div>
     );
