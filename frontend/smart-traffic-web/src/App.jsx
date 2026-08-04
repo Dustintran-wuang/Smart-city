@@ -7,6 +7,8 @@ import axiosClient from './api/axiosClient.js';
 import AlertLog from './AlertLog.jsx';
 import DeviceLog from './DeviceLog';
 import Chatbot from './Chatbot.jsx';
+import chatbot_icon from './assets/chatbot_icon.png';
+
 import {
     Chart as ChartJS,
     CategoryScale,
@@ -33,12 +35,14 @@ const App = () => {
     const [soXe, setSoXe] = useState(0);
     const [canhBao, setCanhBao] = useState(0);
     const [trangThai, setTrangThai] = useState("BÌNH THƯỜNG");
-    
+
     const [isAuto, setIsAuto] = useState(true);
     const [denHienTai, setDenHienTai] = useState('RED');
     const [isLogOpen, setIsLogOpen] = useState(false);
     const [isDeviceLogOpen, setIsDeviceLogOpen] = useState(false);
-    
+    const [isChatbotOpen, setIsChatbotOpen] = useState(false);
+    const [lichSuCanhBao, setLichSuCanhBao] = useState([]);
+
     const [authMode, setAuthMode] = useState('login');
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
@@ -76,6 +80,9 @@ const App = () => {
                 setTrangThai(data.totalAlertsToday > 0 ? "CÓ CẢNH BÀO" : "BÌNH THƯỜNG");
                 if (data.alertsByHour) {
                     setDuLieuBieuDo(data.alertsByHour);
+                }
+                if (data.alertsHistory) {
+                    setLichSuCanhBao(data.alertsHistory);
                 }
             }
         } catch (error) {
@@ -149,7 +156,7 @@ const App = () => {
                     <h2 style={{ textAlign: 'center', color: '#00ff00', marginBottom: '30px', letterSpacing: '2px' }}>
                         {authMode === 'login' ? 'ĐĂNG NHẬP HỆ THỐNG' : 'ĐĂNG KÝ TÀI KHOẢN'}
                     </h2>
-                    
+
                     {authError && <div style={{ color: 'red', marginBottom: '15px', textAlign: 'center', fontSize: '14px' }}>{authError}</div>}
 
                     <form onSubmit={authMode === 'login' ? xuLyDangNhap : xuLyDangKy} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -317,6 +324,27 @@ const App = () => {
                 )}
             </div>
 
+            {/* Chatbot */}
+            <button
+                onClick={() => {
+                    setIsChatbotOpen(!isChatbotOpen);
+                }}
+                style={{
+                    position: "fixed",
+                    bottom: '0px',
+                    left: '10px',
+                    borderRadius: '50%',
+                    backgroundColor: 'black',
+                    width: '80px',
+                    height: '80px',
+                    cursor: 'pointer',
+                    border: 'none',
+                    overflow: 'hidden',
+                    zIndex: '9999'
+                }}>
+                <img src={chatbot_icon} width="100%" height="100%" object-fit="cover" />
+            </button>
+
             {/* BÊN PHẢI: CAMERA & THÔNG SỐ */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
@@ -393,6 +421,7 @@ const App = () => {
             {isLogOpen && (
                 <AlertLog
                     setIsLogOpen={setIsLogOpen}
+                    lichSuCanhBao={lichSuCanhBao}
                 />
             )}
 
@@ -401,7 +430,16 @@ const App = () => {
                 <DeviceLog danhSachThietBi={danhSachThietBi} setIsDeviceLogOpen={setIsDeviceLogOpen} />
             )}
 
-            <Chatbot />
+            {/* Khung Chatbot */}
+            <div style={{ display: isChatbotOpen ? 'block' : 'none' }}>
+                <Chatbot
+                    setIsChatbotOpen={setIsChatbotOpen}
+                    canhBao={canhBao}
+                    lichSuCanhBao={lichSuCanhBao}
+                    soThietBiConnected={soThietBiConnected}
+                    tongSoThietBi={tongSoThietBi}
+                />
+            </div>
 
         </div>
     );
