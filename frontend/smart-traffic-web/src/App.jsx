@@ -1,48 +1,100 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import hinhBieuDo from './assets/interface.png';
 import CameraApp from './CameraApp.jsx';
+import { AuthContext } from './context/AuthContext';
+import authApi from './api/authApi';
+import alertApi from './api/alertApi';
+import dashboardApi from './api/dashboardApi';
 
 const App = () => {
-    const [soXe, setSoXe] = useState(69);
-    const [canhBao, setCanhBao] = useState(13);
-    const [trangThai, setTrangThai] = useState("NGỦ GẬT");
+    const { user, isLoggedIn, login, logout, loading } = useContext(AuthContext);
+
+    const [soXe, setSoXe] = useState(0);
+    const [canhBao, setCanhBao] = useState(0);
+    const [trangThai, setTrangThai] = useState("BÌNH THƯỜNG");
+    
     const [isAuto, setIsAuto] = useState(true);
     const [denHienTai, setDenHienTai] = useState('RED');
     const [isLogOpen, setIsLogOpen] = useState(false);
-    const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [authMode, setAuthMode] = useState('login');
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
+    const [email, setEmail] = useState('');
+    
+    const [lichSuCanhBao, setLichSuCanhBao] = useState([]);
+    const [authError, setAuthError] = useState('');
 
-    const lichSuCanhBao = [
-        { id: 1, thoiGian: '14:30:05', loi: 'Ngủ gật (Mắt nhắm > 3s)' },
-        { id: 2, thoiGian: '13:15:20', loi: 'Không tập trung (Quay mặt đi)' },
-        { id: 3, thoiGian: '10:45:12', loi: 'Ngáp dài liên tục' },
-        { id: 4, thoiGian: '09:20:00', loi: 'Ngủ gật (Mắt nhắm > 3s)' },
-        { id: 5, thoiGian: '08:05:10', loi: 'Không thấy mặt tài xế' },
-        { id: 6, thoiGian: '07:30:00', loi: 'Hệ thống bắt đầu chạy' },
-    ];
+    useEffect(() => {
+        let interval;
+        if (isLoggedIn) {
+            fetchDashboardData();
+            // Fetch data periodically
+            interval = setInterval(fetchDashboardData, 5000);
+        }
+        return () => clearInterval(interval);
+    }, [isLoggedIn]);
 
-    const xuLyDangNhập = (e) => {
-        e.preventDefault();
-        if (username === 'admin' && password === '123456') {
-            setIsLoggedIn(true);
-        } else {
-            alert("Sai tài khoản hoặc mật khẩu rồi em ơi (Thử: admin / 123456)");
+    const fetchDashboardData = async () => {
+        try {
+            const statsRes = await dashboardApi.getStats();
+            if (statsRes && statsRes.data) {
+                setSoXe(statsRes.data.totalVehicles || 0);
+                setCanhBao(statsRes.data.totalAlertsToday || 0);
+                setTrangThai(statsRes.data.totalAlertsToday > 0 ? "CÓ CẢNH BÁO" : "BÌNH THƯỜNG");
+            }
+            
+            const alertsRes = await alertApi.getAllAlerts();
+            if (alertsRes && alertsRes.data) {
+                setLichSuCanhBao(alertsRes.data);
+            } else if (alertsRes && Array.isArray(alertsRes)) {
+                // In case response directly returns array without wrapping in data
+                 setLichSuCanhBao(alertsRes);
+            }
+        } catch (error) {
+            console.error("Lỗi khi tải dữ liệu dashboard", error);
         }
     };
 
-    const xuLyDangKy = (e) => {
+    const xuLyDangNhập = async (e) => {
         e.preventDefault();
+        setAuthError('');
+        try {
+            const res = await authApi.login({ username, password });
+            if (res && res.data) {
+                login(res.data.user, res.data.accessToken, res.data.refreshToken);
+            }
+        } catch (error) {
+            const msg = error.response?.data?.message || error.message || "Sai tài khoản hoặc mật khẩu rồi em ơi!";
+            setAuthError(msg);
+        }
+    };
+
+    const xuLyDangKy = async (e) => {
+        e.preventDefault();
+        setAuthError('');
         if (password !== confirmPassword) {
-            alert("Mật khẩu xác nhận không trùng khớp em ơi");
+            setAuthError("Mật khẩu xác nhận không trùng khớp em ơi");
             return;
         }
-        alert("Đăng ký thành công, quay lại đăng nhập đi em.");
-        setAuthMode('login');
-        setConfirmPassword('');
+        try {
+            await authApi.register({ username, password, email });
+            alert("Đăng ký thành công, quay lại đăng nhập đi em.");
+            setAuthMode('login');
+            setConfirmPassword('');
+        } catch (error) {
+            const msg = error.response?.data?.message;
+            if (msg) {
+                setAuthError("Lỗi từ server: " + (typeof msg === 'string' ? msg : JSON.stringify(msg)));
+            } else {
+                setAuthError("Lỗi mạng hoặc server không phản hồi: " + error.message);
+            }
+        }
     };
+
+    if (loading) {
+        return <div style={{ backgroundColor: '#000', color: '#00ff00', minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>Đang tải cấu hình...</div>;
+    }
 
     // Nếu Chưa đăng nhập
     if (!isLoggedIn) {
@@ -58,6 +110,8 @@ const App = () => {
                     <h2 style={{ textAlign: 'center', color: '#00ff00', marginBottom: '30px', letterSpacing: '2px' }}>
                         {authMode === 'login' ? 'ĐĂNG NHẬP HỆ THỐNG' : 'ĐĂNG KÝ TÀI KHOẢN'}
                     </h2>
+                    
+                    {authError && <div style={{ color: 'red', marginBottom: '15px', textAlign: 'center', fontSize: '14px' }}>{authError}</div>}
 
                     <form onSubmit={authMode === 'login' ? xuLyDangNhập : xuLyDangKy} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                         <div>
@@ -70,6 +124,19 @@ const App = () => {
                                 style={{ width: '100%', padding: '10px', borderRadius: '5px', border: '1px solid #444', backgroundColor: '#222', color: 'white', boxSizing: 'border-box' }}
                             />
                         </div>
+
+                        {authMode === 'register' && (
+                            <div>
+                                <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: '#aaa' }}>Email:</label>
+                                <input
+                                    type="email"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    required
+                                    style={{ width: '100%', padding: '10px', borderRadius: '5px', border: '1px solid #444', backgroundColor: '#222', color: 'white', boxSizing: 'border-box' }}
+                                />
+                            </div>
+                        )}
 
                         <div>
                             <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: '#aaa' }}>Mật khẩu:</label>
@@ -140,17 +207,15 @@ const App = () => {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                     <button
-                        onClick={() => {
-                            setIsLoggedIn(false);
-                            setUsername('');
-                            setPassword('');
-                        }}
+                        onClick={logout}
                         style={{ backgroundColor: '#222', color: '#ff4444', border: '1px solid #ff4444', padding: '6px 12px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px', transition: '0.3s' }}
                     >
                         ĐĂNG XUẤT
                     </button>
-                    <span style={{ fontSize: '20px', fontWeight: 'bold' }}>USER</span>
-                    <div style={{ width: '30px', height: '30px', borderRadius: '50%', backgroundColor: '#ccc', border: '3px solid white' }}></div>
+                    <span style={{ fontSize: '20px', fontWeight: 'bold' }}>{user?.username?.toUpperCase() || 'USER'}</span>
+                    <div style={{ width: '30px', height: '30px', borderRadius: '50%', backgroundColor: '#ccc', border: '3px solid white', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'black', fontWeight: 'bold', fontSize: '14px' }}>
+                        {user?.username?.charAt(0)?.toUpperCase() || '?'}
+                    </div>
                 </div>
             </div>
 
@@ -173,8 +238,8 @@ const App = () => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', alignSelf: 'start' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <div style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: 'red' }}></div>
-                            <span style={{ fontSize: '20px' }}>Trạng thái tài xế: <b style={{ color: 'red' }}>{trangThai}</b></span>
+                            <div style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: trangThai === 'CÓ CẢNH BÁO' ? 'red' : 'green' }}></div>
+                            <span style={{ fontSize: '20px' }}>Trạng thái tài xế: <b style={{ color: trangThai === 'CÓ CẢNH BÁO' ? 'red' : 'green' }}>{trangThai}</b></span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                             <div style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: 'white' }}></div>
@@ -246,12 +311,33 @@ const App = () => {
                         </div>
 
                         <div style={{ padding: '20px', overflowY: 'auto' }}>
-                            {lichSuCanhBao.map((item) => (
-                                <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px dashed #444' }}>
-                                    <span style={{ color: '#a0aec0', fontWeight: 'bold' }}>{item.thoiGian}</span>
-                                    <span style={{ color: '#fc8181' }}>{item.loi}</span>
-                                </div>
-                            ))}
+                            {lichSuCanhBao.length === 0 ? (
+                                <div style={{ color: '#aaa', textAlign: 'center' }}>Chưa có cảnh báo nào.</div>
+                            ) : (
+                                lichSuCanhBao.map((item) => (
+                                    <div key={item.id} style={{ display: 'flex', flexDirection: 'column', padding: '15px 0', borderBottom: '1px dashed #444', gap: '5px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <span style={{ color: '#a0aec0', fontWeight: 'bold' }}>
+                                                {new Date(item.createdAt).toLocaleString()} - TB: <span style={{ color: '#fff' }}>{item.deviceCode || 'N/A'}</span>
+                                            </span>
+                                            <span style={{ color: '#fc8181', fontWeight: 'bold', border: '1px solid #fc8181', padding: '2px 8px', borderRadius: '15px', fontSize: '12px' }}>
+                                                {item.alertType || 'DROWSY'}
+                                            </span>
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#aaa', fontSize: '14px' }}>
+                                            <span>Mức độ EAR: <b style={{ color: 'white' }}>{item.earValue?.toFixed(3)}</b></span>
+                                            <span>Nhắm mắt liên tục: <b style={{ color: 'white' }}>{item.consecutiveFrames} frames</b></span>
+                                        </div>
+                                        {item.imageUrl && (
+                                            <img 
+                                                src={`http://localhost:8080${item.imageUrl}`} 
+                                                alt="Alert snapshot" 
+                                                style={{ width: '100%', maxWidth: '100%', borderRadius: '5px', border: '1px solid #555', marginTop: '10px' }} 
+                                            />
+                                        )}
+                                    </div>
+                                ))
+                            )}
                         </div>
                     </div>
                 </div>
