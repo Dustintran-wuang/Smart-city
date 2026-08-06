@@ -1,20 +1,26 @@
-#include <Arduino.h>
 #include "esp_camera.h"
 #include <WiFi.h>
+#include <vector> // Thư viện mảng động để chứa danh sách nhiều kết nối
 
-// ===========================
-// Select camera model in board_config.h
-// ===========================
-#include "board_config.h"
+const char *ssid = "Moni";
+const char *password = "giaogiaogiao";
 
-// ===========================
-// Enter your WiFi credentials
-// ===========================
-const char *ssid = "Dang Gia";
-const char *password = "Xaxi@2006";
+#define CAMERA_MODEL_AI_THINKER
+#include "camera_pins.h"
 
-void startCameraServer();
-void setupLedFlash();
+#define PART_BOUNDARY "123456789000000000000987654321"
+
+// HTTP Header tiêu chuẩn cho luồng MJPEG Stream + Cho phép Web React kết nối (CORS)
+static const char* STREAM_HEADER = 
+  "HTTP/1.1 200 OK\r\n"
+  "Access-Control-Allow-Origin: *\r\n"
+  "Content-Type: multipart/x-mixed-replace;boundary=" PART_BOUNDARY "\r\n\r\n";
+
+// Khởi tạo Server Socket ở port 80
+WiFiServer server(80);
+
+// Mảng lưu danh sách các thiết bị đang xem stream (Python, Web...)
+std::vector<WiFiClient> clients;
 
 void setup() {
   Serial.begin(115200);
@@ -36,97 +42,90 @@ void setup() {
   config.pin_pclk = PCLK_GPIO_NUM;
   config.pin_vsync = VSYNC_GPIO_NUM;
   config.pin_href = HREF_GPIO_NUM;
-  config.pin_sccb_sda = SIOD_GPIO_NUM;
-  config.pin_sccb_scl = SIOC_GPIO_NUM;
+  config.pin_sscb_sda = SIOD_GPIO_NUM;
+  config.pin_sscb_scl = SIOC_GPIO_NUM;
   config.pin_pwdn = PWDN_GPIO_NUM;
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
-  //config.frame_size = FRAMESIZE_UXGA;
-  config.frame_size = FRAMESIZE_QVGA;
-  //config.pixel_format = PIXFORMAT_JPEG;  // for streaming
-  config.pixel_format = PIXFORMAT_RGB565; // for face detection/recognition
-  config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
-  config.fb_location = CAMERA_FB_IN_PSRAM;
-  config.jpeg_quality = 12;
-  config.fb_count = 1;
+  config.pixel_format = PIXFORMAT_JPEG;
 
-  // if PSRAM IC present, init with UXGA resolution and higher JPEG quality
-  //                      for larger pre-allocated frame buffer.
-  if (config.pixel_format == PIXFORMAT_JPEG) {
-    if (psramFound()) {
-      config.jpeg_quality = 10;
-      config.fb_count = 2;
-      config.grab_mode = CAMERA_GRAB_LATEST;
-    } else {
-      // Limit the frame size when PSRAM is not available
-      config.frame_size = FRAMESIZE_SVGA;
-      config.fb_location = CAMERA_FB_IN_DRAM;
-    }
-  } else {
-    // Best option for face detection/recognition
-    config.frame_size = FRAMESIZE_240X240;
-#if CONFIG_IDF_TARGET_ESP32S3
+  if (psramFound()) {
+    config.frame_size = FRAMESIZE_QVGA; // 320x240 để mượt khi gửi nhiều thiết bị
+    config.jpeg_quality = 12;
     config.fb_count = 2;
-#endif
+  } else {
+    Serial.println("-> Không tìm thấy PSRAM, chuyển về độ phân giải thấp!");
+    config.frame_size = FRAMESIZE_QVGA;
+    config.jpeg_quality = 12;
+    config.fb_count = 1;
   }
 
-#if defined(CAMERA_MODEL_ESP_EYE)
-  pinMode(13, INPUT_PULLUP);
-  pinMode(14, INPUT_PULLUP);
-#endif
-
-  // camera init
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
-    Serial.printf("Camera init failed with error 0x%x", err);
+    Serial.printf("Lỗi khởi tạo Camera: 0x%x", err);
     return;
   }
 
   sensor_t *s = esp_camera_sensor_get();
-  // initial sensors are flipped vertically and colors are a bit saturated
-  if (s->id.PID == OV3660_PID) {
-    s->set_vflip(s, 1);        // flip it back
-    s->set_brightness(s, 1);   // up the brightness just a bit
-    s->set_saturation(s, -2);  // lower the saturation
-  }
-  // drop down frame size for higher initial frame rate
-  if (config.pixel_format == PIXFORMAT_JPEG) {
-    s->set_framesize(s, FRAMESIZE_QVGA);
-  }
-
-#if defined(CAMERA_MODEL_M5STACK_WIDE) || defined(CAMERA_MODEL_M5STACK_ESP32CAM)
   s->set_vflip(s, 1);
   s->set_hmirror(s, 1);
-#endif
-
-#if defined(CAMERA_MODEL_ESP32S3_EYE)
-  s->set_vflip(s, 1);
-#endif
-
-// Setup LED FLash if LED pin is defined in camera_pins.h
-#if defined(LED_GPIO_NUM)
-  setupLedFlash();
-#endif
 
   WiFi.begin(ssid, password);
-  WiFi.setSleep(false);
-
-  Serial.print("WiFi connecting");
+  Serial.print("Đang kết nối Wi-Fi");
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
-  Serial.println("");
-  Serial.println("WiFi connected");
+  Serial.println("\nWi-Fi đã kết nối!");
 
-  startCameraServer();
+  // Bắt đầu mở Server
+  server.begin();
 
-  Serial.print("Camera Ready! Use 'http://");
+  Serial.print("-> URL Luồng Video (Hỗ trợ xem đồng thời): http://");
   Serial.print(WiFi.localIP());
-  Serial.println("' to connect");
+  Serial.println("/stream");
 }
 
 void loop() {
-  // Do nothing. Everything is done in another task by the web server
-  delay(10000);
+  // 1. Kiểm tra xem có thiết bị mới kết nối không (Python hoặc Web)
+  WiFiClient newClient = server.available();
+  if (newClient) {
+    // Gửi Header chào mừng HTTP Stream cho thiết bị mới
+    newClient.print(STREAM_HEADER);
+    clients.push_back(newClient);
+    Serial.printf("-> [ESP32] Có thiết bị mới kết nối! Tổng số thiết bị: %d\n", clients.size());
+  }
+
+  // 2. Nếu có ít nhất 1 thiết bị đang kết nối, tiến hành chụp và gửi ảnh
+  if (!clients.empty()) {
+    camera_fb_t *fb = esp_camera_fb_get();
+    if (fb) {
+      char part_buf[128];
+      size_t hlen = snprintf(part_buf, sizeof(part_buf),
+        "--" PART_BOUNDARY "\r\n"
+        "Content-Type: image/jpeg\r\n"
+        "Content-Length: %u\r\n\r\n", fb->len);
+
+      // Duyệt ngược mảng để gửi ảnh tới tất cả các kết nối
+      for (int i = clients.size() - 1; i >= 0; i--) {
+        if (clients[i].connected()) {
+          // Bắn khung hình cho client
+          clients[i].write((const uint8_t*)part_buf, hlen);
+          clients[i].write(fb->buf, fb->len);
+          clients[i].write((const uint8_t*)"\r\n", 2);
+        } else {
+          // Ngắt kết nối nếu client đã đóng trang/thoát app
+          clients[i].stop();
+          clients.erase(clients.begin() + i);
+          Serial.printf("-> [ESP32] Một thiết bị đã ngắt kết nối. Còn lại: %d\n", clients.size());
+        }
+      }
+      
+      // Trả lại bộ nhớ đệm cho camera
+      esp_camera_fb_return(fb);
+    }
+  } else {
+    // Nếu không ai xem stream thì nghỉ 10ms để tránh nóng chip
+    delay(10);
+  }
 }

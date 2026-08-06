@@ -56,12 +56,42 @@ const App = () => {
     const tongSoThietBi = danhSachThietBi.length;
     const soThietBiConnected = danhSachThietBi.filter(device => device.isActive).length;
 
+    const fetchAlerts = async () => {
+        try {
+            const alertsRes = await axiosClient.get('/alerts');
+            const data = alertsRes.data?.data || alertsRes.data;
+
+            if (Array.isArray(data)) {
+                setLichSuCanhBao(data);
+            } else if (Array.isArray(data?.content)) {
+                setLichSuCanhBao(data.content);
+            }
+        } catch (error) {
+            console.error("Lỗi khi tải lịch sử cảnh báo:", error);
+        }
+    };
+
     useEffect(() => {
         let interval;
         if (isLoggedIn) {
             fetchDashboardData();
             fetchDevices();
-            // Fetch data periodically
+            fetchAlerts();
+
+            interval = setInterval(() => {
+                fetchDashboardData();
+                fetchDevices();
+                fetchAlerts();
+            }, 5000);
+        }
+        return () => clearInterval(interval);
+    }, [isLoggedIn]);
+
+    useEffect(() => {
+        let interval;
+        if (isLoggedIn) {
+            fetchDashboardData();
+            fetchDevices();
             interval = setInterval(() => {
                 fetchDashboardData();
                 fetchDevices();
@@ -80,9 +110,6 @@ const App = () => {
                 setTrangThai(data.totalAlertsToday > 0 ? "CÓ CẢNH BÀO" : "BÌNH THƯỜNG");
                 if (data.alertsByHour) {
                     setDuLieuBieuDo(data.alertsByHour);
-                }
-                if (data.alertsHistory) {
-                    setLichSuCanhBao(data.alertsHistory);
                 }
             }
         } catch (error) {

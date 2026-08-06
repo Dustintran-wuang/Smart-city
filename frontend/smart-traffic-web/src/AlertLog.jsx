@@ -1,7 +1,6 @@
 import React from 'react';
 
 const LichSuCanhBao = ({ setIsLogOpen, lichSuCanhBao = [] }) => {
-
     const dich = (type) => {
         switch (type) {
             case 'DROWSY': return 'Ngủ gật';
@@ -33,15 +32,15 @@ const LichSuCanhBao = ({ setIsLogOpen, lichSuCanhBao = [] }) => {
                         <div style={{ color: '#a0aec0' }}>Chưa có dữ liệu cảnh báo nào.</div>
                     ) : (
                         lichSuCanhBao.map((item) => {
-                            const time = item.created_at;
-                            const ear = item.ear_value;
-                            const threshold = item.ear_threshold;
-                            const frames = item.consecutive_frames;
-                            const isAck = item.is_acknowledged;
-                            const type = item.type;
+                            const time = item.created_at || item.createdAt || 'N/A';
+                            const ear = item.ear_value ?? item.earValue ?? 0;
+                            const threshold = item.ear_threshold ?? item.earThreshold ?? 0.20;
+                            const frames = item.consecutive_frames ?? item.consecutiveFrames ?? 0;
+                            const isAck = item.is_acknowledged ?? item.isAcknowledged ?? false;
+                            const type = item.type || 'DROWSY';
 
                             return (
-                                <div key={item.id} style={{
+                                <div key={item.id || Math.random()} style={{
                                     display: 'flex', flexDirection: 'column', padding: '15px',
                                     backgroundColor: '#222', borderRadius: '8px', borderLeft: `5px solid ${isAck ? '#48bb78' : '#f56565'}`
                                 }}>
