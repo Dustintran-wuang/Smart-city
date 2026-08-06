@@ -1,7 +1,7 @@
 import React from 'react';
 
 function CameraApp() {
-    const streamUrl = "http://192.168.1.4:81/stream";
+    const streamUrl = "http://192.168.12.34/stream";
 
     return (
         <div className="camera-container">
