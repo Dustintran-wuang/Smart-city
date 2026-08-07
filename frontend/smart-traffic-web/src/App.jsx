@@ -59,11 +59,12 @@ const App = () => {
     const fetchAlerts = async () => {
         try {
             const alertsRes = await axiosClient.get('/alerts');
-            const data = alertsRes.data?.data || alertsRes.data;
+            // Do interceptor đã bóc data, alertsRes có thể chính là mảng kết quả
+            const data = alertsRes.data?.data || alertsRes.data || alertsRes;
 
             if (Array.isArray(data)) {
                 setLichSuCanhBao(data);
-            } else if (Array.isArray(data?.content)) {
+            } else if (data && Array.isArray(data.content)) {
                 setLichSuCanhBao(data.content);
             }
         } catch (error) {
