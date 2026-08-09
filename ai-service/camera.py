@@ -57,7 +57,7 @@ def calculate_ear(eye_points):
 
 # CAMERA
 esp32_url = "http://192.168.12.34/stream"
-cap = cv2.VideoCapture(esp32_url)
+cap = cv2.VideoCapture(0)
 
 print(f"Starting Drowsiness Detection for device: {DEVICE_CODE}")
 print(f"Backend URL: {BACKEND_URL}")
