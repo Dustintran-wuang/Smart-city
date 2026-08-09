@@ -1,1 +1,8 @@
-".env" 
+# 1. Local Secrets & Environment Configurations
+.env
+*.env
+
+# 2. Python (AI Service & Virtual Environments)
+venv/
+.venv/
+env/

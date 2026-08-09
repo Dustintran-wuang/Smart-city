@@ -18,7 +18,28 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect  
 
+  mail:
+    host: ${SPRING_MAIL_HOST:smtp.gmail.com}
+    port: ${SPRING_MAIL_PORT:587}
+    username: ${SPRING_MAIL_USERNAME:your_email@gmail.com}
+    password: ${SPRING_MAIL_PASSWORD:your_app_password}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
 jwt:
   secret: dGhpcy1pcy1hLXNlY3JldC1rZXktZm9yLWRyb3dzaW5lc3MtYWxlcnQtc3lzdGVtLXByb2plY3Q=
   access-token-expiration: 900000 # 15 minutes in milliseconds
   refresh-token-expiration: 604800000 # 7 days in milliseconds
+
+notification:
+  telegram:
+    enabled: ${TELEGRAM_ENABLED:true}
+    bot-token: ${TELEGRAM_BOT_TOKEN:YOUR_TELEGRAM_BOT_TOKEN}
+    default-chat-id: ${TELEGRAM_DEFAULT_CHAT_ID:YOUR_TELEGRAM_CHAT_ID}
+  email:
+    enabled: ${EMAIL_ENABLED:true}
+    company-email: ${COMPANY_DEFAULT_EMAIL:company_safety@fleet.com}

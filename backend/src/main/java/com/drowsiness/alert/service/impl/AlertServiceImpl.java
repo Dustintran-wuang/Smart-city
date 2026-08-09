@@ -7,6 +7,7 @@ import com.drowsiness.alert.entity.Device;
 import com.drowsiness.alert.repository.AlertLogRepository;
 import com.drowsiness.alert.repository.DeviceRepository;
 import com.drowsiness.alert.service.AlertService;
+import com.drowsiness.alert.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -29,6 +30,7 @@ public class AlertServiceImpl implements AlertService {
 
     private final AlertLogRepository alertLogRepository;
     private final DeviceRepository deviceRepository;
+    private final NotificationService notificationService;
 
     private static final String UPLOAD_DIR = "uploads/";
 
@@ -63,6 +65,13 @@ public class AlertServiceImpl implements AlertService {
                 .build();
 
         AlertLog savedAlert = alertLogRepository.save(alertLog);
+
+        // Send Telegram (to driver) & Email (to company) caution notifications asynchronously
+        try {
+            notificationService.sendDrowsinessCautionNotifications(savedAlert);
+        } catch (Exception e) {
+            log.error("Failed to trigger notifications for alert id {}: {}", savedAlert.getId(), e.getMessage());
+        }
 
         return mapToResponse(savedAlert);
     }
