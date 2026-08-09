@@ -2,33 +2,60 @@ import React, { useState } from 'react';
 
 const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
 
-const Chatbot = ({ setIsChatbotOpen, canhBao, lichSuCanhBao = [], soThietBiConnected, tongSoThietBi }) => {
+const Chatbot = ({
+    setIsChatbotOpen,
+    canhBao,
+    lichSuCanhBao = [],
+    soThietBiConnected,
+    tongSoThietBi
+}) => {
+    console.log("Dữ liệu lịch sử cảnh báo nhận từ DB:", lichSuCanhBao);
 
-    const soCanhBaoChuaXuLy = lichSuCanhBao.filter(item => !item.is_acknowledged).length;
+    const getEarValue = (item) => item?.ear_value ?? item?.earValue ?? item?.ear ?? 'N/A';
+    const getThreshold = (item) => item?.ear_threshold ?? item?.earThreshold ?? item?.threshold ?? 0.25;
+    const getTime = (item) => item?.created_at ?? item?.createdAt ?? item?.time ?? item?.timestamp ?? 'Không rõ';
+    const getStatus = (item) => (item?.is_acknowledged ?? item?.isAcknowledged) ? 'Đã xử lý' : 'Chưa xử lý';
 
-    const chitietCanhBaoText = lichSuCanhBao.length > 0
-        ? lichSuCanhBao.map(item =>
-            `- Lúc ${item.created_at}: EAR=${item.ear_value} (Ngưỡng: ${item.ear_threshold}) - Trạng thái: ${item.is_acknowledged ? 'Đã xử lý' : 'Chưa xử lý'}`
+    const recentAlerts = Array.isArray(lichSuCanhBao) ? lichSuCanhBao.slice(0, 5) : [];
+    const latestAlert = recentAlerts[0];
+
+    const latestEAR = latestAlert ? getEarValue(latestAlert) : 'Chưa có dữ liệu';
+    const latestThreshold = latestAlert ? getThreshold(latestAlert) : 0.2;
+    const soCanhBaoChuaXuLy = Array.isArray(lichSuCanhBao)
+        ? lichSuCanhBao.filter(item => !(item.is_acknowledged ?? item.isAcknowledged)).length
+        : 0;
+
+    const chitietCanhBaoText = recentAlerts.length > 0
+        ? recentAlerts.map(item =>
+            `- Lúc ${getTime(item)}: EAR = ${getEarValue(item)} (Ngưỡng cảnh báo: ${getThreshold(item)}) - Trạng thái: ${getStatus(item)}`
         ).join('\n')
-        : "Chưa có cảnh báo nào.";
+        : "Hiện chưa ghi nhận lần cảnh báo ngủ gật nào.";
 
     const SYSTEM_PROMPT = `
-Bạn là "Trợ lý AI An Toàn Giao Thông" tích hợp trong hệ thống cảnh báo ngủ gật.
+Bạn là "Trợ lý AI An Toàn Giao Thông" tích hợp trong hệ thống cảnh báo ngủ gật lái xe.
 
-DỮ LIỆU THỰC TẾ ĐANG CHẠY TRÊN HỆ THỐNG LÚC NÀY:
+KHÁI NIỆM CƠ BẢN:
+- EAR (Eye Aspect Ratio) là chỉ số tỷ lệ mắt.
+- Mắt mở bình thường: EAR thường từ 0.25 - 0.35.
+- Mắt nhắm/ngủ gật: EAR giảm xuống dưới ngưỡng (thường là < ${latestThreshold}).
+
+DỮ LIỆU THỰC TẾ LẤY TỪ CLOUD DATABASE LÚC NÀY:
 - Tổng số lần cảnh báo hôm nay: ${canhBao} lần.
-- Số lần cảnh báo chưa xử lý: ${soCanhBaoChuaXuLy} lần.
-- Chi tiết các lần cảnh báo gần đây:
-${chitietCanhBaoText}
+- Cảnh báo chưa xử lý: ${soCanhBaoChuaXuLy} lần.
+- Cảnh báo gần đây nhất ghi nhận EAR = ${latestEAR} (Ngưỡng hệ thống: ${latestThreshold}).
 - Số thiết bị kết nối: ${soThietBiConnected}/${tongSoThietBi} thiết bị.
 
-Nhiệm vụ:
-- Khi người dùng hỏi về số lượng cảnh báo, cảnh báo chưa xử lý, thời gian bị cảnh báo hay chỉ số EAR, hãy trả lời CHÍNH XÁC theo DỮ LIỆU THỰC TẾ ở trên.
-- Trả lời ngắn gọn, thân thiện, tư vấn an toàn lái xe.
+DANH SÁCH CÁC CẢNH BÁO MỚI NHẤT:
+${chitietCanhBaoText}
+
+NHIỆM VỤ CỦA BẠN:
+1. Trả lời CHÍNH XÁC chỉ số EAR, ngưỡng EAR và thời gian dựa trên "DỮ LIỆU THỰC TẾ" ở trên khi người dùng hỏi.
+2. Nếu người dùng hỏi EAR là gì, hãy giải thích ngắn gọn dựa trên KHÁI NIỆM CƠ BẢN.
+3. Trả lời ngắn gọn, lịch sự, đóng vai trò trợ lý nhắc nhở an toàn giao thông.
 `;
 
     const [messages, setMessages] = useState([
-        { sender: 'bot', text: 'Xin chào! Mình là Trợ lý AI. Bạn cần tư vấn gì về hệ thống hoặc an toàn lái xe không?' }
+        { role: 'assistant', text: 'Xin chào! Mình là Trợ lý AI. Bạn cần tra cứu chỉ số EAR hay lịch sử cảnh báo không?' }
     ]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
@@ -37,11 +64,19 @@ Nhiệm vụ:
         if (!input.trim() || loading) return;
 
         const userText = input.trim();
-        const updatedMessages = [...messages, { sender: 'user', text: userText }];
+        const updatedMessages = [...messages, { role: 'user', text: userText }];
 
         setMessages(updatedMessages);
         setInput('');
         setLoading(true);
+
+        const apiMessages = [
+            { role: "system", content: SYSTEM_PROMPT },
+            ...updatedMessages.map(msg => ({
+                role: msg.role === 'user' ? 'user' : 'assistant',
+                content: msg.text
+            }))
+        ];
 
         try {
             const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -51,10 +86,7 @@ Nhiệm vụ:
                     "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
-                    messages: [
-                        { role: "system", content: SYSTEM_PROMPT },
-                        { role: "user", content: userText }
-                    ],
+                    messages: apiMessages,
                     model: "llama-3.3-70b-versatile"
                 })
             });
@@ -62,25 +94,23 @@ Nhiệm vụ:
             const data = await response.json();
 
             if (data.error) {
-                setMessages([...updatedMessages, { sender: 'bot', text: `Lỗi: ${data.error.message}` }]);
+                setMessages([...updatedMessages, { role: 'assistant', text: `Lỗi: ${data.error.message}` }]);
                 return;
             }
 
             const botReply = data.choices?.[0]?.message?.content;
             if (botReply) {
-                setMessages([...updatedMessages, { sender: 'bot', text: botReply }]);
+                setMessages([...updatedMessages, { role: 'assistant', text: botReply }]);
             }
         } catch (error) {
-            setMessages([...updatedMessages, { sender: 'bot', text: 'Lỗi kết nối mạng!' }]);
+            setMessages([...updatedMessages, { role: 'assistant', text: 'Lỗi kết nối mạng!' }]);
         } finally {
             setLoading(false);
         }
     };
 
     const handleKeyDown = (e) => {
-        if (e.key === 'Enter') {
-            handleSend();
-        }
+        if (e.key === 'Enter') handleSend();
     };
 
     return (
@@ -116,8 +146,7 @@ Nhiệm vụ:
                     fontWeight: 'bold'
                 }}
             >
-                <span>Chatbot</span>
-
+                <span>Trợ Lý AI EAR</span>
                 <button
                     onClick={() => setIsChatbotOpen(false)}
                     style={{
@@ -133,15 +162,15 @@ Nhiệm vụ:
                 </button>
             </div>
 
-            {/* Body (Khung chứa tin nhắn) */}
+            {/* Body */}
             <div style={{ padding: '15px', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {messages.map((msg, index) => (
                     <div
                         key={index}
                         style={{
-                            alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start',
-                            backgroundColor: msg.sender === 'user' ? '#000' : '#f0f0f0',
-                            color: msg.sender === 'user' ? '#fff' : '#000',
+                            alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                            backgroundColor: msg.role === 'user' ? '#000' : '#f0f0f0',
+                            color: msg.role === 'user' ? '#fff' : '#000',
                             padding: '10px 14px',
                             borderRadius: '14px',
                             maxWidth: '80%',
@@ -155,16 +184,16 @@ Nhiệm vụ:
                 ))}
                 {loading && (
                     <div style={{ alignSelf: 'flex-start', color: '#888', fontSize: '13px', fontStyle: 'italic' }}>
-                        AI đang suy nghĩ...
+                        AI đang truy xuất dữ liệu EAR...
                     </div>
                 )}
             </div>
 
-            {/* Footer (Ô nhập và nút gửi) */}
+            {/* Footer */}
             <div style={{ padding: '10px', borderTop: '1px solid #eee', display: 'flex', gap: '8px' }}>
                 <input
                     type="text"
-                    placeholder="Hỏi về EAR, chống ngủ gật..."
+                    placeholder="Hỏi về EAR, lịch sử ngủ gật..."
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
