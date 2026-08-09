@@ -1,208 +1,325 @@
 #include <WiFi.h>
-#include <WiFiClientSecure.h>
+#include <DNSServer.h>
+#include <WebServer.h>
+#include <Preferences.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
-#define RED_LIGHT 21
-#define YELLOW_LIGHT 22
-#define GREEN_LIGHT 23
+// ================= 1. CẤU HÌNH PHẦN CỨNG =================
+const int LED_PINS[] = {25, 26, 27, 14};
+const int NUM_LEDS = 4;
+const int BUZZER_PIN = 33; 
 
-unsigned long timeRed = 5;
-unsigned long timeYellow = 2;
-unsigned long timeGreen = 4;
+const char* DEVICE_ID = "ESP32_CABIN_01";
+const char* LED_IDS[] = {"LED_25", "LED_26", "LED_27", "LED_14"};
+const char* BUZZER_ID = "BUZZER_33";
 
-const char* ssid = "Wokwi-GUEST"; //Chạy giả lập 
-const char* password = "";        //Chạy giả lập
-const char* mqtt_server = "a46f7c1729084df7bcd94b64791d9897.s1.eu.hivemq.cloud";
-const int mqtt_port = 8883;
-const char* mqtt_user = "phamtung";
-const char* mqtt_pass = "Tung@123";
+// ================= 2. CẤU HÌNH HIVEMQ BROKER & TOPICS =================
+const char* MQTT_SERVER = "broker.hivemq.com"; 
+const int   MQTT_PORT   = 1883;
+const char* MQTT_USER   = "";                  
+const char* MQTT_PASS   = "";                  
 
-// MQTT Topics
-const char* cmd_topic = "iot/traffic/device_01/cmd";              
-const char* heartbeat_topic = "iot/traffic/device_01/heartbeat";  
-const char* status_topic = "iot/traffic/device_01/status";
+// Danh sách các MQTT Topics
+const char* TOPIC_CONTROL   = "smarttruck/device/control";   // Sub: Nhận lệnh Bật/Tắt từ Web/Mobile
+const char* TOPIC_STATUS    = "smarttruck/device/status";    // Pub: Báo cáo trạng thái chi tiết khi thay đổi
+const char* TOPIC_HEARTBEAT = "smarttruck/device/heartbeat"; // Pub: Định kỳ 30s gửi 1 lần để Backend đếm Active Devices
 
-WiFiClientSecure espClient;
-PubSubClient client(espClient);
+// ================= 3. CẤU HÌNH SOFTAP & CAPTIVE PORTAL =================
+const char* AP_SSID = "SmartTruck_Setup";
+const char* AP_PASS = "12345678";
 
-enum TrafficState {STATE_RED, STATE_YELLOW, STATE_GREEN};
-TrafficState currentState = STATE_RED;
+const byte DNS_PORT = 53;
+IPAddress apIP(192, 168, 4, 1);
 
-//millis nên xài kiểu dữ liệu long để tránh tràn dữ liệu
-unsigned long previousMillis = 0;            //kiểm tra currentMillis chạy đến ở chu kỳ trước
-unsigned long currentPeriod = timeRed * 1000; //đổi sang miligiây
+// Các đối tượng hệ thống
+DNSServer dnsServer;
+WebServer server(80);
+Preferences preferences;
+WiFiClient espClient;
+PubSubClient mqttClient(espClient);
 
-// Biến quản lý thời gian gửi Heartbeat
+// Biến trạng thái hệ thống
+bool isAPMode = false;
+bool isAlertActive = false;
+String stored_ssid = "";
+String stored_pass = "";
+
+// Biến quản lý thời gian Heartbeat (30s)
 unsigned long previousHeartbeatMillis = 0;
-const unsigned long heartbeatInterval = 5000; // Cứ 5 giây gửi Heartbeat 1 lần
+const unsigned long HEARTBEAT_INTERVAL = 30000; // 30,000 ms = 30 giây
 
-void setup_wifi() {
-  delay(10);
-  Serial.println("\nConnecting to WiFi...");
-  WiFi.begin(ssid, password);
-  while(WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("\nWiFi connected");
-}
-
-//Hàm tiếp nhận chuỗi JSON gửi xuống từ web và xử lý chuyển đổi
-// payload là con trỏ trỏ vào vùng dữ liệu thô được đẩy thông qua giao thức MQTT
-void callback(char* topic, byte* payload, unsigned int  length) {
-  Serial.print("\n[MQTT] Nhận cấu hình mới từ topic: ");
-  Serial.println(topic);
-
-  String messageTemp = "";
-
-  //Phần này được sử dụng để chuyển đổi từ Byte sang string dựa trên length
-  for (int i = 0; i < length; i++) {
-    messageTemp += (char)payload[i]; //Ép chuyển đổi sang kiểu dữ liệu mà chương trình có thể đọc được
-  }
-
-  //để debug kiểm tra chuỗi JSON nhận được 
-  Serial.print("Nội dung chuỗi JSON: ");
-  Serial.println(messageTemp);
+// ================= 4. LUỒNG BÁO CÁO CHI TIẾT (STATUS TELEMETRY) =================
+void publishDeviceStatus() {
+  if (isAPMode || !mqttClient.connected()) return;
 
   JsonDocument doc;
-  DeserializationError error = deserializeJson(doc, messageTemp);
+  doc["device_id"] = DEVICE_ID;
+  doc["alert_status"] = isAlertActive ? "ON" : "OFF";
 
-  if (error) {
-    Serial.print("Giải mã JSON thât bại: ");
-    Serial.println(error.c_str());
-    return;
+  // Đóng gói ID và trạng thái từng LED
+  JsonArray ledsArray = doc["leds"].to<JsonArray>();
+  for (int i = 0; i < NUM_LEDS; i++) {
+    JsonObject ledObj = ledsArray.add<JsonObject>();
+    ledObj["id"] = LED_IDS[i];
+    ledObj["pin"] = LED_PINS[i];
+    ledObj["state"] = isAlertActive ? "ON" : "OFF";
   }
 
-  if (doc.containsKey("red")) {
-    timeRed = doc["red"];
-    Serial.printf("Đổi thời gian Đỏ thành: %lu giây\n", timeRed);
+  // Đóng gói ID và trạng thái Buzzer
+  JsonObject buzzerObj = doc["buzzer"].to<JsonObject>();
+  buzzerObj["id"] = BUZZER_ID;
+  buzzerObj["pin"] = BUZZER_PIN;
+  buzzerObj["state"] = isAlertActive ? "ON" : "OFF";
+
+  char jsonBuffer[512];
+  serializeJson(doc, jsonBuffer);
+
+  mqttClient.publish(TOPIC_STATUS, jsonBuffer);
+  Serial.print("[MQTT STATUS -> HiveMQ]: ");
+  Serial.println(jsonBuffer);
+}
+
+// ================= 5. LUỒNG HEARTBEAT DÀNH CHO BACKEND ĐẾM SỐ LƯỢNG (30S/LẦN) =================
+void sendHeartbeat() {
+  if (isAPMode || !mqttClient.connected()) return;
+
+  // Gói tin siêu nhẹ phục vụ Backend kiểm tra kết nối
+  JsonDocument doc;
+  doc["device_id"] = DEVICE_ID;
+  doc["status"]    = "ONLINE";
+
+  char jsonBuffer[128];
+  serializeJson(doc, jsonBuffer);
+
+  mqttClient.publish(TOPIC_HEARTBEAT, jsonBuffer);
+  Serial.print("[HEARTBEAT 30s -> HiveMQ]: ");
+  Serial.println(jsonBuffer);
+}
+
+// ================= 6. ĐIỀU KHIỂN PHẦN CỨNG (4 LED + BUZZER) =================
+void setAlertState(bool enable) {
+  isAlertActive = enable;
+
+  // Bật/Tắt 4 LED
+  for (int i = 0; i < NUM_LEDS; i++) {
+    digitalWrite(LED_PINS[i], enable ? HIGH : LOW);
   }
 
-  if (doc.containsKey("yellow")) {
-    timeYellow = doc["yellow"];
-    Serial.printf("Đổi thời gian Vàng thành: %lu giây\n", timeYellow);
-  }
-  if (doc.containsKey("green")) {
-    timeGreen = doc["green"];
-    Serial.printf("Đổi thời gian Xanh thành: %lu giây\n", timeGreen);
+  // Bật/Tắt Còi Buzzer
+  digitalWrite(BUZZER_PIN, enable ? HIGH : LOW);
+
+  Serial.println(enable ? "[HARDWARE] BAT CANH BAO (4 LED ON + BUZZER ON)" 
+                        : "[HARDWARE] TAT CANH BAO (4 LED OFF + BUZZER OFF)");
+
+  // Gửi thông báo trạng thái cập nhật lên Backend/Frontend ngay khi thay đổi
+  publishDeviceStatus();
+}
+
+// Xử lý khi nhận lệnh MQTT gửi xuống từ Topic CONTROL
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  Serial.print("[MQTT Input <- HiveMQ] Topic [");
+  Serial.print(topic);
+  Serial.println("]");
+
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, payload, length);
+
+  if (!error && doc.containsKey("command")) {
+    String command = doc["command"].as<String>();
+    command.toUpperCase();
+
+    if (command == "ON" || command == "ALERT_ON") {
+      setAlertState(true);
+    } else if (command == "OFF" || command == "ALERT_OFF") {
+      setAlertState(false);
+    }
   }
 }
 
-void reconnect() {
-  while (!client.connected()) {
-    Serial.print("Connecting to MQTT Broker...");
-    String clientId = "ESP32_Tung_";
+void reconnectMQTT() {
+  while (!mqttClient.connected() && !isAPMode) {
+    Serial.print("Dang ket noi HiveMQ Broker (broker.hivemq.com)...");
+    String clientId = "ESP32_Truck_";
+    clientId += String(random(0xffff), HEX);
 
-    //Cấp cấu hình id khác nhau cho ESP32 khi truy cập bằng giao thức MQTT (tránh conflict nếu nhiều người sử dụng)
-    clientId += String (random(0, 0xffff), HEX); 
+    if (mqttClient.connect(clientId.c_str(), MQTT_USER, MQTT_PASS)) {
+      Serial.println(" THANH CONG!");
+      mqttClient.subscribe(TOPIC_CONTROL);
+      Serial.print("Da Subscribe topic: ");
+      Serial.println(TOPIC_CONTROL);
 
-    if(client.connect(clientId.c_str(), mqtt_user, mqtt_pass)) {
-      Serial.println("Thành công");
-
-      client.subscribe (cmd_topic);
-      Serial.printf("Đã subscribe kênh: %s\n", cmd_topic);
+      // Gửi ngay trạng thái chi tiết và 1 tín hiệu Heartbeat ban đầu khi vừa nối mạng
+      publishDeviceStatus();
+      sendHeartbeat();
     } else {
-      Serial.print("Thất bại, mã lỗi rc=");
-      Serial.print(client.state());
-      Serial.println("Thử lại sáu 5 giây...");
+      Serial.print(" That bai, rc=");
+      Serial.print(mqttClient.state());
+      Serial.println(" Thu lai sau 5 giay...");
       delay(5000);
     }
   }
 }
 
-void report_status(String state_name, unsigned long duration) {
-  JsonDocument doc;
-  doc["active_light"] = state_name;  
-  doc["duration_sec"] = duration;   
+// ================= 7. XỬ LÝ SOFTAP & CAPTIVE PORTAL (WEB SETUP) =================
+void handleRoot() {
+  int n = WiFi.scanNetworks();
 
-  //Cần test thực tế do giả lập chỉ in ra một giá trị nhất định
-  doc["hardware_temp"] = temperatureRead(); 
-
-  char buffer[128];
-  serializeJson(doc, buffer);       
-  client.publish(status_topic, buffer);
+  String html = "<!DOCTYPE html><html><head>";
+  html += "<meta charset='UTF-8'>";
+  html += "<meta name='viewport' content='width=device-width, initial-scale=1.0'>";
+  html += "<title>SmartTruck WiFi Setup</title>";
+  html += "<style>";
+  html += "body { font-family: Arial, sans-serif; background: #eef2f3; text-align: center; padding: 20px; }";
+  html += ".card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); max-width: 340px; margin: 0 auto; }";
+  html += "h2 { color: #007bff; margin-bottom: 15px; }";
+  html += "select, input { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 14px; }";
+  html += "input[type='submit'] { background: #007bff; color: white; font-weight: bold; border: none; cursor: pointer; font-size: 16px; margin-top: 15px; }";
+  html += "</style></head><body>";
   
-  client.publish(status_topic, buffer);
+  html += "<div class='card'>";
+  html += "<h2>🚘 SmartTruck WiFi Setup</h2>";
+  html += "<form action='/save' method='POST'>";
+  
+  html += "<label style='float:left; font-size:13px; font-weight:bold;'>Chọn mạng Wi-Fi:</label>";
+  html += "<select name='ssid'>";
+  if (n <= 0) {
+    html += "<option value=''>Không tìm thấy Wi-Fi nào</option>";
+  } else {
+    for (int i = 0; i < n; ++i) {
+      html += "<option value='" + WiFi.SSID(i) + "'>" + WiFi.SSID(i) + " (" + String(WiFi.RSSI(i)) + " dBm)</option>";
+    }
+  }
+  html += "</select><br>";
 
-  Serial.printf("[STATUS REPORT] Đã báo cáo lên Cloud: %s (%lu giây)\n", state_name.c_str(), duration);
-  Serial.printf("Nhiệt độ chip lúc báo cáo: %.2f *C\n", temperatureRead());
+  html += "<label style='float:left; font-size:13px; font-weight:bold; margin-top:10px;'>Mật khẩu Wi-Fi:</label>";
+  html += "<input type='password' name='password' placeholder='Nhập mật khẩu...'>";
+  html += "<input type='submit' value='Lưu Cấu Hình & Kết Nối'>";
+  html += "</form></div></body></html>";
+
+  server.send(200, "text/html; charset=utf-8", html);
 }
 
+void handleSave() {
+  if (server.hasArg("ssid") && server.hasArg("password")) {
+    String new_ssid = server.arg("ssid");
+    String new_pass = server.arg("password");
+
+    // 1. Lưu SSID và Password vào NVS Flash
+    preferences.begin("wifi-config", false);
+    preferences.putString("ssid", new_ssid);
+    preferences.putString("password", new_pass);
+    preferences.end();
+
+    // 2. Trả về giao diện HTML thông báo thành công
+    String response = "<!DOCTYPE html><html><head><meta charset='UTF-8'></head>";
+    response += "<body style='text-align:center; font-family:Arial; padding-top:50px;'>";
+    response += "<h2 style='color:green;'>Lưu Cấu Hình Thành Công!</h2>";
+    response += "<p>ESP32 đang khởi động lại để kết nối vào Wi-Fi: <b>" + new_ssid + "</b></p>";
+    response += "<p>Bạn có thể đóng cửa sổ này.</p>";
+    response += "</body></html>";
+    
+    server.send(200, "text/html; charset=utf-8", response);
+    
+    Serial.println("\n[SOFTAP] Đã nhận cấu hình Wi-Fi mới từ thiết bị!");
+    Serial.println("SSID: " + new_ssid);
+    Serial.println("[SYSTEM] Khởi động lại ESP32 sau 2 giây...");
+    
+    delay(2000);
+    ESP.restart(); 
+  } else {
+    server.send(400, "text/plain", "Thiếu thông tin SSID hoặc Password");
+  }
+}
+
+void startSoftAP() {
+  isAPMode = true;
+  Serial.println("\n[SOFTAP] Kích hoạt chế độ Access Point...");
+  
+  WiFi.mode(WIFI_AP);
+  WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
+  WiFi.softAP(AP_SSID, AP_PASS);
+
+  // Kích hoạt DNS Captive Portal
+  dnsServer.start(DNS_PORT, "*", apIP);
+
+  // Đăng ký Router WebServer
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/save", HTTP_POST, handleSave);
+  server.onNotFound(handleRoot); 
+  server.begin();
+
+  Serial.print("[SOFTAP] Wi-Fi phát ra: ");
+  Serial.println(AP_SSID);
+  Serial.println("[SOFTAP] Dùng điện thoại bắt Wi-Fi này để cấu hình!");
+}
+
+// ================= 8. SETUP & MAIN LOOP =================
 void setup() {
-  // put your setup code here, to run once:
   Serial.begin(115200);
-  pinMode(RED_LIGHT, OUTPUT);
-  pinMode(YELLOW_LIGHT, OUTPUT);
-  pinMode(GREEN_LIGHT, OUTPUT);
+  delay(1000);
 
-  setup_wifi();
-  espClient.setInsecure();
+  // Khởi tạo các chân GPIO Output cho 4 LED và 1 Buzzer
+  for (int i = 0; i < NUM_LEDS; i++) {
+    pinMode(LED_PINS[i], OUTPUT);
+    digitalWrite(LED_PINS[i], LOW);
+  }
+  pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, LOW);
 
-  client.setServer(mqtt_server, mqtt_port);
-  client.setCallback(callback);
+  // 1. Kiểm tra cấu hình Wi-Fi đã lưu trong Flash NVS
+  preferences.begin("wifi-config", true);
+  stored_ssid = preferences.getString("ssid", "");
+  stored_pass = preferences.getString("password", "");
+  preferences.end();
+
+  // 2. Thử kết nối Wi-Fi cũ nếu có
+  if (stored_ssid != "") {
+    Serial.print("Đang kết nối Wi-Fi đã lưu: ");
+    Serial.println(stored_ssid);
+
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(stored_ssid.c_str(), stored_pass.c_str());
+
+    int timeout = 0;
+    while (WiFi.status() != WL_CONNECTED && timeout < 20) { 
+      delay(500);
+      Serial.print(".");
+      timeout++;
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.println("\n[SUCCESS] Kết nối Wi-Fi thành công! IP: " + WiFi.localIP().toString());
+
+      // Khởi tạo HiveMQ MQTT Client
+      mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
+      mqttClient.setCallback(mqttCallback);
+      return; 
+    }
+    Serial.println("\n[WARNING] Kết nối Wi-Fi cũ thất bại! Chuyển sang chế độ SoftAP...");
+  }
+
+  // 3. Nếu chưa có Wi-Fi hoặc kết nối lỗi -> Bật SoftAP
+  startSoftAP();
 }
 
 void loop() {
-  if (!client.connected()) {
-    reconnect();
-  }
-  client.loop();
-  
-  //khác với delay() thì millis() chạy như là một đồng hồ dưới nền không ảnh hưởng hẳng tới phần cứng như delay() 
-  //vì vậy nó được sử dụng như là một hàm điều kiện hơn
-  unsigned long currentMillis = millis(); 
-
-  // Phần chịu trách nhiệm heartbeat
-  if (currentMillis - previousHeartbeatMillis >= heartbeatInterval) {
-    previousHeartbeatMillis = currentMillis;
-    client.publish(heartbeat_topic, "ping");
-    Serial.println("[HEARTBEAT] Đã gửi tín hiệu 'ping' giữ kết nối.");
-  }
-
-  if (currentMillis - previousMillis >= currentPeriod) {
-    previousMillis = currentMillis;
-
-    if(currentState == STATE_RED) {
-      currentState = STATE_GREEN;
-      currentPeriod = timeGreen * 1000;
-      Serial.println("Green turned on");
-
-      report_status("GREEN", timeGreen);
+  if (isAPMode) {
+    // Luồng xử lý Captive Portal kết nối từ điện thoại
+    dnsServer.processNextRequest();
+    server.handleClient();
+  } else {
+    // Luồng hoạt động MQTT với HiveMQ Broker
+    if (!mqttClient.connected()) {
+      reconnectMQTT();
     }
+    mqttClient.loop();
 
-    else if(currentState == STATE_GREEN) {
-      currentState = STATE_YELLOW;
-      currentPeriod = timeYellow * 1000;
-      Serial.println("Yellow turned on");
-
-      report_status("YELLOW", timeYellow);
+    // ---------- XỬ LÝ GỬI HEARTBEAT 30S/LẦN (DÙNG MILLIS) ----------
+    unsigned long currentMillis = millis();
+    if (currentMillis - previousHeartbeatMillis >= HEARTBEAT_INTERVAL) {
+      previousHeartbeatMillis = currentMillis;
+      sendHeartbeat();
     }
-
-    else if(currentState == STATE_YELLOW) {
-      currentState = STATE_RED;
-      currentPeriod = timeRed * 1000;
-      Serial.println("Red turned on");
-
-      report_status("RED", timeRed);
-    } 
-  }
-
-  if (currentState == STATE_RED) {
-    digitalWrite(RED_LIGHT, HIGH);
-    digitalWrite(YELLOW_LIGHT, LOW);
-    digitalWrite(GREEN_LIGHT, LOW);
-  }
-
-  else if (currentState == STATE_YELLOW) {
-    digitalWrite(RED_LIGHT, LOW);
-    digitalWrite(YELLOW_LIGHT, HIGH);
-    digitalWrite(GREEN_LIGHT, LOW);
-  }
-  
-  else if (currentState == STATE_GREEN) {
-    digitalWrite(RED_LIGHT, LOW);
-    digitalWrite(YELLOW_LIGHT, LOW);
-    digitalWrite(GREEN_LIGHT, HIGH);
   }
 }
