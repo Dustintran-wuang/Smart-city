@@ -8,11 +8,9 @@
 // ================= 1. CẤU HÌNH PHẦN CỨNG =================
 const int LED_PINS[] = {25, 26, 27, 14};
 const int NUM_LEDS = 4;
-const int BUZZER_PIN = 33; 
+const int BUZZER_PIN = 32; 
 
 const char* DEVICE_ID = "ESP32_CABIN_01";
-const char* LED_IDS[] = {"LED_25", "LED_26", "LED_27", "LED_14"};
-const char* BUZZER_ID = "BUZZER_33";
 
 // ================= 2. CẤU HÌNH HIVEMQ BROKER & TOPICS =================
 const char* MQTT_SERVER = "broker.hivemq.com"; 
@@ -20,10 +18,9 @@ const int   MQTT_PORT   = 1883;
 const char* MQTT_USER   = "";                  
 const char* MQTT_PASS   = "";                  
 
-// Danh sách các MQTT Topics
+// MQTT Topics
 const char* TOPIC_CONTROL   = "smarttruck/device/control";   // Sub: Nhận lệnh Bật/Tắt từ Web/Mobile
-const char* TOPIC_STATUS    = "smarttruck/device/status";    // Pub: Báo cáo trạng thái chi tiết khi thay đổi
-const char* TOPIC_HEARTBEAT = "smarttruck/device/heartbeat"; // Pub: Định kỳ 30s gửi 1 lần để Backend đếm Active Devices
+const char* TOPIC_HEARTBEAT = "smarttruck/device/heartbeat"; // Pub: Định kỳ 30s gửi tín hiệu Online về Backend
 
 // ================= 3. CẤU HÌNH SOFTAP & CAPTIVE PORTAL =================
 const char* AP_SSID = "SmartTruck_Setup";
@@ -49,45 +46,15 @@ String stored_pass = "";
 unsigned long previousHeartbeatMillis = 0;
 const unsigned long HEARTBEAT_INTERVAL = 30000; // 30,000 ms = 30 giây
 
-// ================= 4. LUỒNG BÁO CÁO CHI TIẾT (STATUS TELEMETRY) =================
-void publishDeviceStatus() {
-  if (isAPMode || !mqttClient.connected()) return;
-
-  JsonDocument doc;
-  doc["device_id"] = DEVICE_ID;
-  doc["alert_status"] = isAlertActive ? "ON" : "OFF";
-
-  // Đóng gói ID và trạng thái từng LED
-  JsonArray ledsArray = doc["leds"].to<JsonArray>();
-  for (int i = 0; i < NUM_LEDS; i++) {
-    JsonObject ledObj = ledsArray.add<JsonObject>();
-    ledObj["id"] = LED_IDS[i];
-    ledObj["pin"] = LED_PINS[i];
-    ledObj["state"] = isAlertActive ? "ON" : "OFF";
-  }
-
-  // Đóng gói ID và trạng thái Buzzer
-  JsonObject buzzerObj = doc["buzzer"].to<JsonObject>();
-  buzzerObj["id"] = BUZZER_ID;
-  buzzerObj["pin"] = BUZZER_PIN;
-  buzzerObj["state"] = isAlertActive ? "ON" : "OFF";
-
-  char jsonBuffer[512];
-  serializeJson(doc, jsonBuffer);
-
-  mqttClient.publish(TOPIC_STATUS, jsonBuffer);
-  Serial.print("[MQTT STATUS -> HiveMQ]: ");
-  Serial.println(jsonBuffer);
-}
-
-// ================= 5. LUỒNG HEARTBEAT DÀNH CHO BACKEND ĐẾM SỐ LƯỢNG (30S/LẦN) =================
+// ================= 4. LUỒNG HEARTBEAT (30S/LẦN) =================
 void sendHeartbeat() {
   if (isAPMode || !mqttClient.connected()) return;
 
-  // Gói tin siêu nhẹ phục vụ Backend kiểm tra kết nối
+  // Gói tin Heartbeat báo cáo thiết bị còn Online và trạng thái cảnh báo hiện tại
   JsonDocument doc;
-  doc["device_id"] = DEVICE_ID;
-  doc["status"]    = "ONLINE";
+  doc["device_id"]    = DEVICE_ID;
+  doc["status"]       = "ONLINE";
+  doc["alert_status"] = isAlertActive ? "ON" : "OFF";
 
   char jsonBuffer[128];
   serializeJson(doc, jsonBuffer);
@@ -97,7 +64,7 @@ void sendHeartbeat() {
   Serial.println(jsonBuffer);
 }
 
-// ================= 6. ĐIỀU KHIỂN PHẦN CỨNG (4 LED + BUZZER) =================
+// ================= 5. ĐIỀU KHIỂN PHẦN CỨNG (4 LED + BUZZER) =================
 void setAlertState(bool enable) {
   isAlertActive = enable;
 
@@ -111,9 +78,6 @@ void setAlertState(bool enable) {
 
   Serial.println(enable ? "[HARDWARE] BAT CANH BAO (4 LED ON + BUZZER ON)" 
                         : "[HARDWARE] TAT CANH BAO (4 LED OFF + BUZZER OFF)");
-
-  // Gửi thông báo trạng thái cập nhật lên Backend/Frontend ngay khi thay đổi
-  publishDeviceStatus();
 }
 
 // Xử lý khi nhận lệnh MQTT gửi xuống từ Topic CONTROL
@@ -149,8 +113,7 @@ void reconnectMQTT() {
       Serial.print("Da Subscribe topic: ");
       Serial.println(TOPIC_CONTROL);
 
-      // Gửi ngay trạng thái chi tiết và 1 tín hiệu Heartbeat ban đầu khi vừa nối mạng
-      publishDeviceStatus();
+      // Gửi ngay 1 tín hiệu Heartbeat ban đầu khi vừa nối mạng
       sendHeartbeat();
     } else {
       Serial.print(" That bai, rc=");
@@ -161,7 +124,7 @@ void reconnectMQTT() {
   }
 }
 
-// ================= 7. XỬ LÝ SOFTAP & CAPTIVE PORTAL (WEB SETUP) =================
+// ================= 6. XỬ LÝ SOFTAP & CAPTIVE PORTAL (WEB SETUP) =================
 void handleRoot() {
   int n = WiFi.scanNetworks();
 
@@ -205,13 +168,11 @@ void handleSave() {
     String new_ssid = server.arg("ssid");
     String new_pass = server.arg("password");
 
-    // 1. Lưu SSID và Password vào NVS Flash
     preferences.begin("wifi-config", false);
     preferences.putString("ssid", new_ssid);
     preferences.putString("password", new_pass);
     preferences.end();
 
-    // 2. Trả về giao diện HTML thông báo thành công
     String response = "<!DOCTYPE html><html><head><meta charset='UTF-8'></head>";
     response += "<body style='text-align:center; font-family:Arial; padding-top:50px;'>";
     response += "<h2 style='color:green;'>Lưu Cấu Hình Thành Công!</h2>";
@@ -221,7 +182,7 @@ void handleSave() {
     
     server.send(200, "text/html; charset=utf-8", response);
     
-    Serial.println("\n[SOFTAP] Đã nhận cấu hình Wi-Fi mới từ thiết bị!");
+    Serial.println("\n[SOFTAP] Đã nhận cấu hình Wi-Fi mới!");
     Serial.println("SSID: " + new_ssid);
     Serial.println("[SYSTEM] Khởi động lại ESP32 sau 2 giây...");
     
@@ -240,10 +201,8 @@ void startSoftAP() {
   WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
   WiFi.softAP(AP_SSID, AP_PASS);
 
-  // Kích hoạt DNS Captive Portal
   dnsServer.start(DNS_PORT, "*", apIP);
 
-  // Đăng ký Router WebServer
   server.on("/", HTTP_GET, handleRoot);
   server.on("/save", HTTP_POST, handleSave);
   server.onNotFound(handleRoot); 
@@ -254,7 +213,7 @@ void startSoftAP() {
   Serial.println("[SOFTAP] Dùng điện thoại bắt Wi-Fi này để cấu hình!");
 }
 
-// ================= 8. SETUP & MAIN LOOP =================
+// ================= 7. SETUP & MAIN LOOP =================
 void setup() {
   Serial.begin(115200);
   delay(1000);
@@ -305,17 +264,15 @@ void setup() {
 
 void loop() {
   if (isAPMode) {
-    // Luồng xử lý Captive Portal kết nối từ điện thoại
     dnsServer.processNextRequest();
     server.handleClient();
   } else {
-    // Luồng hoạt động MQTT với HiveMQ Broker
     if (!mqttClient.connected()) {
       reconnectMQTT();
     }
     mqttClient.loop();
 
-    // ---------- XỬ LÝ GỬI HEARTBEAT 30S/LẦN (DÙNG MILLIS) ----------
+    // ---------- LUỒNG HEARTBEAT 30S/LẦN ----------
     unsigned long currentMillis = millis();
     if (currentMillis - previousHeartbeatMillis >= HEARTBEAT_INTERVAL) {
       previousHeartbeatMillis = currentMillis;
