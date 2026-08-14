@@ -1,5 +1,6 @@
 package com.drowsiness.alert.service;
 
+import com.drowsiness.alert.dto.request.DeviceControlRequest;
 import com.drowsiness.alert.dto.request.DeviceRequest;
 import com.drowsiness.alert.dto.response.DeviceResponse;
 
@@ -15,4 +16,6 @@ public interface DeviceService {
     List<DeviceResponse> getAllDevices();
 
     void deleteDevice(Long id);
+
+    void controlDevice(String deviceCode, String target, DeviceControlRequest request);
 }

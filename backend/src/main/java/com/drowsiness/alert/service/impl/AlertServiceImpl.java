@@ -7,6 +7,7 @@ import com.drowsiness.alert.entity.Device;
 import com.drowsiness.alert.repository.AlertLogRepository;
 import com.drowsiness.alert.repository.DeviceRepository;
 import com.drowsiness.alert.service.AlertService;
+import com.drowsiness.alert.service.MqttGateway;
 import com.drowsiness.alert.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +32,7 @@ public class AlertServiceImpl implements AlertService {
     private final AlertLogRepository alertLogRepository;
     private final DeviceRepository deviceRepository;
     private final NotificationService notificationService;
+    private final MqttGateway mqttGateway;
 
     private static final String UPLOAD_DIR = "uploads/";
 
@@ -65,6 +67,17 @@ public class AlertServiceImpl implements AlertService {
                 .build();
 
         AlertLog savedAlert = alertLogRepository.save(alertLog);
+
+        // Send MQTT Alert Command to ESP32 (Buzzer & Light)
+        try {
+            String topicBuzzer = "smartcity/device/" + device.getDeviceCode() + "/buzzer";
+            String topicLight = "smartcity/device/" + device.getDeviceCode() + "/light";
+            mqttGateway.sendToMqtt(topicBuzzer, "ON");
+            mqttGateway.sendToMqtt(topicLight, "ON");
+            log.info("Sent MQTT Alert commands to device: {}", device.getDeviceCode());
+        } catch (Exception e) {
+            log.error("Failed to send MQTT commands for alert id {}: {}", savedAlert.getId(), e.getMessage());
+        }
 
         // Send Telegram (to driver) & Email (to company) caution notifications asynchronously
         try {

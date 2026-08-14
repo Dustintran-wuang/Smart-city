@@ -4,6 +4,7 @@ import com.drowsiness.alert.entity.AlertLog;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
@@ -17,6 +18,9 @@ public interface AlertLogRepository extends JpaRepository<AlertLog, Long>, JpaSp
     long countByIsAcknowledgedFalse();
 
     List<AlertLog> findTop5ByOrderByCreatedAtDesc();
+
+    @Query("SELECT COUNT(DISTINCT a.device) FROM AlertLog a WHERE a.createdAt BETWEEN :start AND :end")
+    long countDistinctDevicesWithAlertsToday(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
 
     // Query stats by hour
     @Query("SELECT EXTRACT(HOUR FROM a.createdAt) as hourVal, COUNT(a) as logCount FROM AlertLog a GROUP BY EXTRACT(HOUR FROM a.createdAt) ORDER BY hourVal ASC")

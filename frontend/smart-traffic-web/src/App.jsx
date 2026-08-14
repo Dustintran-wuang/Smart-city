@@ -37,7 +37,8 @@ const App = () => {
     const [trangThai, setTrangThai] = useState("BÌNH THƯỜNG");
 
     const [isAuto, setIsAuto] = useState(true);
-    const [denHienTai, setDenHienTai] = useState('RED');
+    const [denHienTai, setDenHienTai] = useState(false);
+    const [coiHienTai, setCoiHienTai] = useState(false);
     const [isLogOpen, setIsLogOpen] = useState(false);
     const [isDeviceLogOpen, setIsDeviceLogOpen] = useState(false);
     const [isChatbotOpen, setIsChatbotOpen] = useState(false);
@@ -108,7 +109,7 @@ const App = () => {
                 const data = statsRes.data || statsRes;
                 setSoXe(data.totalVehicles || 0);
                 setCanhBao(data.totalAlertsToday || 0);
-                setTrangThai(data.totalAlertsToday > 0 ? "CÓ CẢNH BÀO" : "BÌNH THƯỜNG");
+                setTrangThai(data.totalAlertsToday > 0 ? "CÓ CẢNH BÁO" : "BÌNH THƯỜNG");
                 if (data.alertsByHour) {
                     setDuLieuBieuDo(data.alertsByHour);
                 }
@@ -139,7 +140,7 @@ const App = () => {
                 login(res.data.user, res.data.accessToken, res.data.refreshToken);
             }
         } catch (error) {
-            const msg = error.response?.data?.message || error.message || "Sai tài khoản hoặc mật khẩu rồi em ơi!";
+            const msg = error.response?.data?.message || error.message || "Sai tài khoản hoặc mật khẩu!";
             setAuthError(msg);
         }
     };
@@ -148,12 +149,12 @@ const App = () => {
         e.preventDefault();
         setAuthError('');
         if (password !== confirmPassword) {
-            setAuthError("Mật khẩu xác nhận không trùng khớp em ơi");
+            setAuthError("Mật khẩu xác nhận không trùng khớp");
             return;
         }
         try {
             await authApi.register({ username, password, email });
-            alert("Đăng ký thành công, quay lại đăng nhập đi em.");
+            alert("Đăng ký thành công, quay lại đăng nhập.");
             setAuthMode('login');
             setConfirmPassword('');
         } catch (error) {
@@ -257,11 +258,36 @@ const App = () => {
         );
     }
 
-    const xuLyBamDen = (mauDen) => {
+    const getTargetDeviceCode = () => {
+        const activeDevice = danhSachThietBi.find(d => d.isOnline || d.isActive);
+        return activeDevice ? activeDevice.deviceCode : 'DEV-CAM-001';
+    };
+
+    const xuLyBamDen = async () => {
         if (isAuto === false) {
-            setDenHienTai(mauDen);
+            const newStatus = !denHienTai;
+            setDenHienTai(newStatus);
+            try {
+                await axiosClient.post(`/devices/${getTargetDeviceCode()}/control/light`, { action: newStatus ? "ON" : "OFF" });
+            } catch (err) {
+                console.error("Lỗi khi điều khiển đèn", err);
+            }
         } else {
-            alert("Hệ thống đang AUTO. tắt AUTO để điều khiển bằng chân");
+            alert("Hệ thống đang AUTO. tắt AUTO để điều khiển bằng tay");
+        }
+    };
+
+    const xuLyBamCoi = async () => {
+        if (isAuto === false) {
+            const newStatus = !coiHienTai;
+            setCoiHienTai(newStatus);
+            try {
+                await axiosClient.post(`/devices/${getTargetDeviceCode()}/control/buzzer`, { action: newStatus ? "ON" : "OFF" });
+            } catch (err) {
+                console.error("Lỗi khi điều khiển còi", err);
+            }
+        } else {
+            alert("Hệ thống đang AUTO. tắt AUTO để điều khiển bằng tay");
         }
     };
 
@@ -421,25 +447,38 @@ const App = () => {
                         >
                             📄
                         </div>
-
-                        {/* Đèn & Auto */}
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '15px', alignSelf: 'start' }}>
-                            <div style={{ backgroundColor: '#222', padding: '10px', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '8px', border: '2px solid #444' }}>
-                                <div onClick={() => xuLyBamDen('RED')} style={{ width: '30px', height: '30px', borderRadius: '50%', cursor: isAuto ? 'not-allowed' : 'pointer', backgroundColor: denHienTai === 'RED' ? 'red' : '#440000', boxShadow: denHienTai === 'RED' ? '0 0 15px red' : 'none' }}></div>
-                                <div onClick={() => xuLyBamDen('YELLOW')} style={{ width: '30px', height: '30px', borderRadius: '50%', cursor: isAuto ? 'not-allowed' : 'pointer', backgroundColor: denHienTai === 'YELLOW' ? 'yellow' : '#444400', boxShadow: denHienTai === 'YELLOW' ? '0 0 15px yellow' : 'none' }}></div>
-                                <div onClick={() => xuLyBamDen('GREEN')} style={{ width: '30px', height: '30px', borderRadius: '50%', cursor: isAuto ? 'not-allowed' : 'pointer', backgroundColor: denHienTai === 'GREEN' ? '#00ff00' : '#004400', boxShadow: denHienTai === 'GREEN' ? '0 0 15px #00ff00' : 'none' }}></div>
-                            </div>
-                            <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontSize: '12px', marginBottom: '5px' }}>AUTO</div>
-                                <div onClick={() => setIsAuto(!isAuto)} style={{ width: '40px', height: '20px', backgroundColor: isAuto ? '#00ff00' : '#444', borderRadius: '10px', position: 'relative', cursor: 'pointer' }}>
-                                    <div style={{ width: '16px', height: '16px', backgroundColor: 'white', borderRadius: '50%', position: 'absolute', top: '2px', left: isAuto ? '22px' : '2px', transition: '0.3s' }}></div>
+                        {/* BẢNG ĐIỀU KHIỂN CÔNG NGHIỆP */}
+                        <div style={{ backgroundColor: '#1a1a1a', padding: '15px 25px', borderRadius: '12px', border: '3px solid #333', display: 'flex', gap: '30px', boxShadow: '5px 5px 15px rgba(0,0,0,0.5)' }}>
+                            
+                            {/* Chế độ */}
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+                                <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#aaa', letterSpacing: '1px' }}>CHẾ ĐỘ ⚙️</div>
+                                <div onClick={() => setIsAuto(!isAuto)} style={{ width: '56px', height: '28px', backgroundColor: isAuto ? '#00cc00' : '#555', borderRadius: '14px', position: 'relative', cursor: 'pointer', boxShadow: 'inset 0 2px 5px rgba(0,0,0,0.4)', border: '1px solid #444' }}>
+                                    <div style={{ width: '24px', height: '24px', backgroundColor: '#fff', borderRadius: '50%', position: 'absolute', top: '1px', left: isAuto ? '29px' : '2px', transition: '0.3s', boxShadow: '0 2px 4px rgba(0,0,0,0.3)' }}></div>
                                 </div>
+                                <div style={{ fontSize: '12px', fontWeight: 'bold', color: isAuto ? '#00cc00' : '#888' }}>{isAuto ? 'AUTO' : 'MANUAL'}</div>
                             </div>
-                        </div>
 
-                        {/* Nút Còi */}
-                        <div style={{ width: '80px', height: '80px', background: 'repeating-linear-gradient(45deg, #ffcc00, #ffcc00 10px, #000 10px, #000 20px)', border: '4px solid white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', alignSelf: 'start' }}>
-                            <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'red', border: '2px solid white' }}></div>
+                            <div style={{ width: '2px', backgroundColor: '#333', borderRadius: '1px' }}></div>
+
+                            {/* Đèn */}
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+                                <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#aaa', letterSpacing: '1px' }}>ĐÈN 🚨</div>
+                                <div onClick={xuLyBamDen} style={{ width: '56px', height: '28px', backgroundColor: denHienTai ? '#ff0000' : '#440000', borderRadius: '14px', position: 'relative', cursor: isAuto ? 'not-allowed' : 'pointer', opacity: isAuto ? 0.4 : 1, boxShadow: denHienTai ? '0 0 15px red' : 'inset 0 2px 5px rgba(0,0,0,0.4)', border: '1px solid #444' }}>
+                                    <div style={{ width: '24px', height: '24px', backgroundColor: '#fff', borderRadius: '50%', position: 'absolute', top: '1px', left: denHienTai ? '29px' : '2px', transition: '0.3s', boxShadow: '0 2px 4px rgba(0,0,0,0.3)' }}></div>
+                                </div>
+                                <div style={{ fontSize: '12px', fontWeight: 'bold', color: denHienTai ? '#ff0000' : '#777' }}>{denHienTai ? 'BẬT' : 'TẮT'}</div>
+                            </div>
+
+                            {/* Còi */}
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+                                <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#aaa', letterSpacing: '1px' }}>CÒI 📢</div>
+                                <div onClick={xuLyBamCoi} style={{ width: '56px', height: '28px', backgroundColor: coiHienTai ? '#ff0000' : '#440000', borderRadius: '14px', position: 'relative', cursor: isAuto ? 'not-allowed' : 'pointer', opacity: isAuto ? 0.4 : 1, boxShadow: coiHienTai ? '0 0 15px red' : 'inset 0 2px 5px rgba(0,0,0,0.4)', border: '1px solid #444' }}>
+                                    <div style={{ width: '24px', height: '24px', backgroundColor: '#fff', borderRadius: '50%', position: 'absolute', top: '1px', left: coiHienTai ? '29px' : '2px', transition: '0.3s', boxShadow: '0 2px 4px rgba(0,0,0,0.3)' }}></div>
+                                </div>
+                                <div style={{ fontSize: '12px', fontWeight: 'bold', color: coiHienTai ? '#ff0000' : '#777' }}>{coiHienTai ? 'BẬT' : 'TẮT'}</div>
+                            </div>
+
                         </div>
                     </div>
                 </div>

@@ -28,11 +28,13 @@ public class DashboardServiceImpl implements DashboardService {
         LocalDateTime endOfDay = LocalDateTime.of(LocalDate.now(), LocalTime.MAX);
 
         long totalAlertsToday = alertLogRepository.countByCreatedAtBetween(startOfDay, endOfDay);
-        long activeDevices = deviceRepository.findAll().stream().filter(d -> Boolean.TRUE.equals(d.getIsActive())).count();
+        long activeDevices = deviceRepository.findAll().stream().filter(d -> Boolean.TRUE.equals(d.getIsActive()))
+                .count();
+        long totalDriver = alertLogRepository.countDistinctDevicesWithAlertsToday(startOfDay, endOfDay);
 
         List<Object[]> hourlyStatsRaw = alertLogRepository.getHourlyStatistics();
         List<Map<String, Object>> hourlyStats = new ArrayList<>();
-        
+
         for (Object[] row : hourlyStatsRaw) {
             Map<String, Object> statMap = new HashMap<>();
             statMap.put("hour", row[0]);
@@ -44,6 +46,7 @@ public class DashboardServiceImpl implements DashboardService {
                 .totalAlertsToday(totalAlertsToday)
                 .activeDevices(activeDevices)
                 .alertsByHour(hourlyStats)
+                .totalDriver(totalDriver)
                 .build();
     }
 }

@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.drowsiness.alert.dto.request.DeviceControlRequest;
 import com.drowsiness.alert.dto.request.DeviceRequest;
 import com.drowsiness.alert.dto.response.DeviceResponse;
 import com.drowsiness.alert.service.DeviceService;
@@ -58,5 +59,15 @@ public class DeviceController {
 	public ResponseEntity<Void> deleteDevice(@PathVariable Long id) {
 		deviceService.deleteDevice(id);
 		return ResponseEntity.noContent().build();
+	}
+
+	@PreAuthorize("hasAnyRole('ADMIN', 'USER')")
+	@PostMapping("/{deviceCode}/control/{target}")
+	public ResponseEntity<Void> controlDevice(
+			@PathVariable String deviceCode,
+			@PathVariable String target,
+			@Valid @RequestBody DeviceControlRequest request) {
+		deviceService.controlDevice(deviceCode, target, request);
+		return ResponseEntity.ok().build();
 	}
 }

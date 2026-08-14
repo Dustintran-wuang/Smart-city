@@ -13,9 +13,10 @@ import java.util.Map;
 @NoArgsConstructor
 @AllArgsConstructor
 public class DashboardStatsResponse {
-    
+
     private Long totalAlertsToday;
     private Long activeDevices;
+    private Long totalDriver;
     private List<Map<String, Object>> alertsByHour;
 
 }
