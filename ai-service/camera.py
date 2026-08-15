@@ -56,25 +56,25 @@ def calculate_ear(eye_points):
     return ear
 
 # CAMERA
-# esp32_url = "http://192.168.12.34/stream"
-# cap = cv2.VideoCapture(esp32_url)
+esp32_url = "http://192.168.12.34/stream"
+cap = cv2.VideoCapture(esp32_url)
 # cap = cv2.VideoCapture(1)
 
 # WEBCAM TEST ALTERNATIVE (IRIUN WEBCAM) 
-cap = None
-for index in range(0, 5):
-   test_cap = cv2.VideoCapture(index)
-   if test_cap.isOpened():
-       ret, frame = test_cap.read()
-       if ret:
-           print(f"[AI] Đã tìm thấy camera hoạt động tại Index: {index}")
-           cap = test_cap
-           break
-       cap = test_cap.release()
+#cap = None
+# for index in range(0, 5):
+#    test_cap = cv2.VideoCapture(index)
+#    if test_cap.isOpened():
+#        ret, frame = test_cap.read()
+#        if ret:
+#            print(f"[AI] Đã tìm thấy camera hoạt động tại Index: {index}")
+#            cap = test_cap
+#            break
+#        cap = test_cap.release()
 
-if cap is None:
-    print("[LỖI] Không tìm thấy bất kỳ Camera nào đang hoạt động trên máy tính!")
-    exit()
+# if cap is None:
+#     print("[LỖI] Không tìm thấy bất kỳ Camera nào đang hoạt động trên máy tính!")
+#     exit()
 
 
 print(f"Starting Drowsiness Detection for device: {DEVICE_CODE}")

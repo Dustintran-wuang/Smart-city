@@ -46,12 +46,12 @@ public class MqttConfig {
 		DefaultMqttPahoClientFactory factory = new DefaultMqttPahoClientFactory();
 		MqttConnectOptions options = new MqttConnectOptions();
 		options.setServerURIs(new String[] { brokerUrl });
-		// if (username != null && !username.isBlank()) {
-		// 	options.setUserName(username);
-		// }
-		// if (password != null && !password.isBlank()) {
-		// 	options.setPassword(password.toCharArray());
-		// }
+		if (username != null && !username.isBlank()) {
+			options.setUserName(username);
+		}
+		if (password != null && !password.isBlank()) {
+			options.setPassword(password.toCharArray());
+		}
 		options.setAutomaticReconnect(true);
 		options.setCleanSession(true);
 		factory.setConnectionOptions(options);

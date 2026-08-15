@@ -259,8 +259,13 @@ const App = () => {
     }
 
     const getTargetDeviceCode = () => {
-        const activeDevice = danhSachThietBi.find(d => d.isOnline || d.isActive);
-        return activeDevice ? activeDevice.deviceCode : 'DEV-CAM-001';
+        // Ưu tiên thiết bị đang online, nếu không thì lấy thiết bị active đầu tiên
+        const onlineDevice = danhSachThietBi.find(d => d.isOnline);
+        if (onlineDevice) return onlineDevice.deviceCode;
+        const activeDevice = danhSachThietBi.find(d => d.isActive || d.status === 'ACTIVE');
+        if (activeDevice) return activeDevice.deviceCode;
+        // Fallback nếu DB rỗng - đổi thành mã thiết bị thật của em
+        return 'LED_1';
     };
 
     const xuLyBamDen = async () => {
