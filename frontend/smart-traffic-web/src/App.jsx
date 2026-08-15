@@ -55,7 +55,7 @@ const App = () => {
     const [duLieuBieuDo, setDuLieuBieuDo] = useState([]);
 
     const tongSoThietBi = danhSachThietBi.length;
-    const soThietBiConnected = danhSachThietBi.filter(device => device.isActive).length;
+    const soThietBiConnected = danhSachThietBi.filter(device => device.isOnline).length;
 
     const fetchAlerts = async () => {
         try {
