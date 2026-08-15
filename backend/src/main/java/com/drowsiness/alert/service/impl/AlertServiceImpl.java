@@ -74,6 +74,7 @@ public class AlertServiceImpl implements AlertService {
             String topicLight = "smartcity/device/" + device.getDeviceCode() + "/light";
             mqttGateway.sendToMqtt(topicBuzzer, "ON");
             mqttGateway.sendToMqtt(topicLight, "ON");
+            mqttGateway.sendToMqtt("smartcity/device/ALL/alert", "ON");
             log.info("Sent MQTT Alert commands to device: {}", device.getDeviceCode());
         } catch (Exception e) {
             log.error("Failed to send MQTT commands for alert id {}: {}", savedAlert.getId(), e.getMessage());

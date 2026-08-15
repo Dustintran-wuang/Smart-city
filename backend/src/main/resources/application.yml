@@ -3,16 +3,13 @@ server:
 
 spring:
   datasource:
-    url: jdbc:postgresql://aws-1-ap-northeast-2.pooler.supabase.com:6543/postgres?sslmode=require&prepareThreshold=0
-    
-    username: postgres.qngkmpkvsdciblfpbwye
-    
-    password: "supabaseCLOUD"
-    
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://aws-1-ap-northeast-2.pooler.supabase.com:6543/postgres?sslmode=require&prepareThreshold=0}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres.qngkmpkvsdciblfpbwye}
+    password: ${SPRING_DATASOURCE_PASSWORD:supabaseCLOUD}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: update
     show-sql: true
     properties:
       hibernate:
@@ -22,29 +19,33 @@ spring:
     host: ${SPRING_MAIL_HOST:smtp.gmail.com}
     port: ${SPRING_MAIL_PORT:587}
     username: ${SPRING_MAIL_USERNAME:your_email@gmail.com}
-    password: ${SPRING_MAIL_PASSWORD:your_app_password}
+    password: ${SPRING_MAIL_PASSWORD:ozujervsjuwblpgp}
     properties:
       mail:
         smtp:
           auth: true
           starttls:
             enable: true
+          ssl:
+            trust: smtp.gmail.com
 
 jwt:
-  secret: dGhpcy1pcy1hLXNlY3JldC1rZXktZm9yLWRyb3dzaW5lc3MtYWxlcnQtc3lzdGVtLXByb2plY3Q=
+  secret: ${JWT_SECRET:dGhpcy1pcy1hLXNlY3JldC1rZXktZm9yLWRyb3dzaW5lc3MtYWxlcnQtc3lzdGVtLXByb2plY3Q=}
   access-token-expiration: 900000 # 15 minutes in milliseconds
   refresh-token-expiration: 604800000 # 7 days in milliseconds
 
 notification:
   telegram:
     enabled: ${TELEGRAM_ENABLED:true}
-    bot-token: ${TELEGRAM_BOT_TOKEN:YOUR_TELEGRAM_BOT_TOKEN}
-    default-chat-id: ${TELEGRAM_DEFAULT_CHAT_ID:YOUR_TELEGRAM_CHAT_ID}
+    bot-token: ${TELEGRAM_BOT_TOKEN:8954135943:AAEiUf2YUzSIoe8H2lJ21CMjNMyKJ8tbDS4}
+    default-chat-id: ${TELEGRAM_DEFAULT_CHAT_ID:7175652199}
   email:
     enabled: ${EMAIL_ENABLED:true}
-    company-email: ${COMPANY_DEFAULT_EMAIL:company_safety@fleet.com}
+    company-email: ${COMPANY_DEFAULT_EMAIL:${SPRING_MAIL_USERNAME:your_email@gmail.com}}
 
 mqtt:
-  broker: tcp://broker.hivemq.com:1883
-  client-id: smart-city-backend-server
-  topic: smartcity/device/+/heartbeat
+  broker: ${MQTT_BROKER_URL:ssl://${MQTT_SERVER:21b6b6e71fc04cdb8ab80f011561b98b.s1.eu.hivemq.cloud}:${MQTT_PORT:8883}}
+  client-id: ${MQTT_CLIENT_ID:smart-city-backend-server}
+  topic: ${MQTT_TOPIC_HEARTBEAT:smartcity/device/+/heartbeat}
+  username: ${MQTT_USER:UserTest}
+  password: ${MQTT_PASS:1234567890}
