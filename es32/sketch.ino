@@ -11,12 +11,12 @@ const int LED_PINS[] = {25, 26, 27, 14};
 const int NUM_LEDS = 4;
 const int BUZZER_PIN = 32; 
 
-// Định nghĩa Topic theo cấu trúc: "smartcity/device/{device_id}/{target}"
-// LED 1 -> smartcity/device/LED_1/light
-// LED 2 -> smartcity/device/LED_2/light
-// LED 3 -> smartcity/device/LED_3/light
-// LED 4 -> smartcity/device/LED_4/light
-// BUZZER -> smartcity/device/BUZZER_1/buzzer
+// Cấu trúc Topic Flexible:
+// 1. Đèn LED (4 LED coi như là 1 cụm): smartcity/device/+/light  (Ví dụ: smartcity/device/LED_1/light, smartcity/device/ALL/light, ...) -> Bật/Tắt cả 4 LED cùng lúc
+// 2. Còi Buzzer:                       smartcity/device/+/buzzer (Ví dụ: smartcity/device/BUZZER_1/buzzer, smartcity/device/ALL/buzzer, ...) -> Bật/Tắt còi Buzzer
+// 3. Tổng quát (Alert / All):          smartcity/device/+/alert hoặc smartcity/device/+/all
+// 4. Wildcard Sub:                     smartcity/device/+/+
+// 5. Heartbeat:                        smartcity/device/heartbeat
 
 // ================= 2. CẤU HÌNH HIVEMQ CLOUD (TLS 8883) =================
 const char* MQTT_SERVER = "21b6b6e71fc04cdb8ab80f011561b98b.s1.eu.hivemq.cloud"; // Tự cấu hình
@@ -28,7 +28,7 @@ const char* MQTT_PASS   = "1234567890";
 
 // MQTT Topics
 const char* TOPIC_CONTROL_WILDCARD = "smartcity/device/+/+";       // Sub: Bắt toàn bộ các topic điều khiển
-const char* TOPIC_HEARTBEAT        = "smartcity/device/heartbeat"; // Pub: Định kỳ 30s gửi tín hiệu Online & trạng thái thiết bị
+const char* TOPIC_HEARTBEAT        = "smartcity/device/heartbeat"; // Pub: Cập nhật trạng thái hiện tại của thiết bị
 
 // ================= 3. CẤU HÌNH SOFTAP & CAPTIVE PORTAL =================
 const char* AP_SSID = "SmartCity_Setup";
@@ -54,68 +54,107 @@ String stored_pass = "";
 unsigned long previousHeartbeatMillis = 0;
 const unsigned long HEARTBEAT_INTERVAL = 30000; // 30,000 ms = 30 giây
 
-// ================= 4. LUỒNG HEARTBEAT (30S/LẦN) =================
+// Biến quản lý trạng thái Chớp tắt LED & Buzzer (Non-blocking)
+bool isAlertActive = false;
+bool isBlinking = false;
+unsigned long previousBlinkMillis = 0;
+const unsigned long BLINK_INTERVAL = 200; // Chu kỳ chớp tắt: 200ms
+bool ledBlinkState = false;
+
+// ================= 4. LUỒNG HEARTBEAT CẬP NHẬT TRẠNG THÁI HIỆN TẠI =================
 void sendHeartbeat() {
   if (isAPMode || !mqttClient.connected()) return;
 
-  JsonDocument doc;
-  doc["status"] = "ONLINE";
-  
-  JsonObject devices = doc["devices"].to<JsonObject>();
-  for (int i = 0; i < NUM_LEDS; i++) {
-    String ledKey = "LED_" + String(i + 1);
-    devices[ledKey] = (digitalRead(LED_PINS[i]) == HIGH) ? "ON" : "OFF";
-  }
-  devices["BUZZER_1"] = (digitalRead(BUZZER_PIN) == HIGH) ? "ON" : "OFF";
+  bool isBuzzerOn = (digitalRead(BUZZER_PIN) == HIGH);
+  bool isLightOn  = isBlinking || (digitalRead(LED_PINS[0]) == HIGH);
 
-  char jsonBuffer[256];
+  JsonDocument doc;
+  doc["status"]       = "ONLINE";
+  doc["alert_status"] = (isAlertActive || isLightOn || isBuzzerOn) ? "ON" : "OFF";
+  doc["buzzer"]       = isBuzzerOn ? "ON" : "OFF";
+  doc["light"]        = isLightOn ? "ON" : "OFF";
+
+  char jsonBuffer[160];
   serializeJson(doc, jsonBuffer);
 
   mqttClient.publish(TOPIC_HEARTBEAT, jsonBuffer);
-  Serial.print("[HEARTBEAT 30s -> HiveMQ Cloud]: ");
+
+  Serial.print("[HEARTBEAT -> HiveMQ Cloud]: ");
   Serial.println(jsonBuffer);
 }
 
 // ================= 5. XỬ LÝ NHẬN LỆNH MQTT =================
-void setDeviceState(const String& deviceId, const String& target, bool turnOn) {
-  int state = turnOn ? HIGH : LOW;
+void setAlertState(bool enable) {
+  isAlertActive = enable;
+  isBlinking = enable;
 
+  if (enable) {
+    // Bật Buzzer và kích hoạt chớp tắt đèn liên tục cả 4 LED
+    digitalWrite(BUZZER_PIN, HIGH);
+    ledBlinkState = true;
+    for (int i = 0; i < NUM_LEDS; i++) {
+      digitalWrite(LED_PINS[i], HIGH);
+    }
+    Serial.println("[HARDWARE] KÍCH HOẠT CẢNH BÁO TỔNG (ALL): 4 LED chớp tắt liên tục + Bật BUZZER!");
+  } else {
+    // Tắt Buzzer và tắt toàn bộ 4 đèn LED
+    digitalWrite(BUZZER_PIN, LOW);
+    for (int i = 0; i < NUM_LEDS; i++) {
+      digitalWrite(LED_PINS[i], LOW);
+    }
+    Serial.println("[HARDWARE] TẮT CẢNH BÁO TỔNG (ALL): Tắt toàn bộ 4 LED và BUZZER!");
+  }
+
+  // Cập nhật ngay trạng thái hiện tại qua Heartbeat
+  sendHeartbeat();
+}
+
+void setDeviceState(const String& deviceId, const String& target, bool turnOn) {
   if (target == "light") {
-    if (deviceId == "LED_1") {
-      digitalWrite(LED_PINS[0], state);
-      Serial.printf("[HARDWARE] LED_1 (Pin %d) -> %s\n", LED_PINS[0], turnOn ? "ON" : "OFF");
-    } else if (deviceId == "LED_2") {
-      digitalWrite(LED_PINS[1], state);
-      Serial.printf("[HARDWARE] LED_2 (Pin %d) -> %s\n", LED_PINS[1], turnOn ? "ON" : "OFF");
-    } else if (deviceId == "LED_3") {
-      digitalWrite(LED_PINS[2], state);
-      Serial.printf("[HARDWARE] LED_3 (Pin %d) -> %s\n", LED_PINS[2], turnOn ? "ON" : "OFF");
-    } else if (deviceId == "LED_4") {
-      digitalWrite(LED_PINS[3], state);
-      Serial.printf("[HARDWARE] LED_4 (Pin %d) -> %s\n", LED_PINS[3], turnOn ? "ON" : "OFF");
-    } else {
-      // Mặc định mọi ID khác (DEV-CAM-001, ALL, ALL_LEDS,...) -> Bật/Tắt toàn bộ 4 LED
+    // 💡 CHỈ ĐIỀU KHIỂN ĐÈN: 4 LED coi như 1 cụm -> Bật/Tắt riêng 4 LED, KHÔNG can thiệp Buzzer
+    isBlinking = turnOn;
+    if (turnOn) {
+      ledBlinkState = true;
       for (int i = 0; i < NUM_LEDS; i++) {
-        digitalWrite(LED_PINS[i], state);
+        digitalWrite(LED_PINS[i], HIGH);
       }
-      Serial.printf("[HARDWARE] ALL 4 LEDs (Device: %s) -> %s\n", deviceId.c_str(), turnOn ? "ON" : "OFF");
+      Serial.printf("[HARDWARE] Topic /light (Device: %s) -> BẬT CẢ 4 LED (Chớp tắt liên tục)\n", deviceId.c_str());
+    } else {
+      isAlertActive = false;
+      for (int i = 0; i < NUM_LEDS; i++) {
+        digitalWrite(LED_PINS[i], LOW);
+      }
+      Serial.printf("[HARDWARE] Topic /light (Device: %s) -> TẮT CẢ 4 LED\n", deviceId.c_str());
     }
   } else if (target == "buzzer") {
-    digitalWrite(BUZZER_PIN, state);
-    Serial.printf("[HARDWARE] BUZZER (Pin %d, Device: %s) -> %s\n", BUZZER_PIN, deviceId.c_str(), turnOn ? "ON" : "OFF");
-  } else if (target == "all" || target == "alert") {
-    // Bật/Tắt toàn bộ 4 LED + Còi Buzzer cùng lúc
-    for (int i = 0; i < NUM_LEDS; i++) {
-      digitalWrite(LED_PINS[i], state);
+    // 🔊 CHỈ ĐIỀU KHIỂN CÒI: Bật/Tắt riêng còi Buzzer, KHÔNG can thiệp Đèn
+    digitalWrite(BUZZER_PIN, turnOn ? HIGH : LOW);
+    if (!turnOn) {
+      isAlertActive = false;
     }
-    digitalWrite(BUZZER_PIN, state);
-    Serial.printf("[HARDWARE] ALL DEVICES (4 LEDs + Buzzer) -> %s\n", turnOn ? "ON" : "OFF");
+    Serial.printf("[HARDWARE] Topic /buzzer (Device: %s) -> %s\n", deviceId.c_str(), turnOn ? "BUZZER ON" : "BUZZER OFF");
+  } else if (target == "alert" || target == "all" || target == "") {
+    // 🚨 ĐIỀU KHIỂN TỔNG (CẢ HAI): Bật/Tắt đồng thời cả 4 LED và còi Buzzer
+    setAlertState(turnOn);
+    return;
   } else {
-    Serial.printf("[HARDWARE] Unknown target: %s\n", target.c_str());
+    // Với các topic điều khiển tổng khác
+    setAlertState(turnOn);
+    return;
   }
+
+  // Cập nhật ngay trạng thái hiện tại qua Heartbeat
+  sendHeartbeat();
 }
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  String topicStr = String(topic);
+  
+  // Bỏ qua nếu là topic heartbeat
+  if (topicStr.endsWith("/heartbeat")) {
+    return;
+  }
+
   Serial.print("[MQTT Input <- HiveMQ Cloud] Topic [");
   Serial.print(topic);
   Serial.print("]: ");
@@ -126,8 +165,8 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   }
   Serial.println(payloadStr);
 
-  // Phân tích Topic: smartcity/device/{device_id}/{target}
-  String topicStr = String(topic);
+  // Phân tích Topic cấu trúc: smartcity/device/{device_id}/{target}
+  // Ví dụ: smartcity/device/LED_1/light, smartcity/device/BUZZER_1/buzzer, smartcity/device/ALL/light
   String prefix = "smartcity/device/";
   if (!topicStr.startsWith(prefix)) {
     return;
@@ -139,8 +178,8 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     return;
   }
 
-  String deviceId = subPath.substring(0, slashIndex);
-  String target = subPath.substring(slashIndex + 1);
+  String deviceId = subPath.substring(0, slashIndex); // LED_1, BUZZER_1, ALL, ...
+  String target = subPath.substring(slashIndex + 1);    // light, buzzer, alert, all, ...
 
   // Lấy command từ payload (hỗ trợ cả JSON {"command": "ON"} và chuỗi thuần "ON"/"OFF")
   String command = "";
@@ -167,12 +206,12 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 void reconnectMQTT() {
   while (!mqttClient.connected() && !isAPMode) {
     Serial.print("Dang ket noi HiveMQ Cloud TLS (Port 8883)...");
-    String clientId = "ESP32_City_";
+    String clientId = "ESP32_Device_";
     clientId += String(random(0xffff), HEX);
 
     if (mqttClient.connect(clientId.c_str(), MQTT_USER, MQTT_PASS)) {
       Serial.println(" THANH CONG!");
-      // Đăng ký topic wildcard bắt toàn bộ các thiết bị smartcity/device/{device_id}/{target}
+      // Đăng ký topic wildcard linh hoạt: smartcity/device/+/+ (bắt cả smartcity/device/+/light & smartcity/device/+/buzzer)
       mqttClient.subscribe(TOPIC_CONTROL_WILDCARD);
       Serial.print("Da Subscribe topic: ");
       Serial.println(TOPIC_CONTROL_WILDCARD);
@@ -306,6 +345,19 @@ void loop() {
     mqttClient.loop();
 
     unsigned long currentMillis = millis();
+
+    // Xử lý chớp tắt cả 4 LED liên tục khi có Cảnh báo (non-blocking)
+    if (isBlinking) {
+      if (currentMillis - previousBlinkMillis >= BLINK_INTERVAL) {
+        previousBlinkMillis = currentMillis;
+        ledBlinkState = !ledBlinkState;
+        for (int i = 0; i < NUM_LEDS; i++) {
+          digitalWrite(LED_PINS[i], ledBlinkState ? HIGH : LOW);
+        }
+      }
+    }
+
+    // Luồng gửi Heartbeat định kỳ 30s
     if (currentMillis - previousHeartbeatMillis >= HEARTBEAT_INTERVAL) {
       previousHeartbeatMillis = currentMillis;
       sendHeartbeat();
