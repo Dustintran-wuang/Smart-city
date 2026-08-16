@@ -41,7 +41,7 @@ notification:
     default-chat-id: ${TELEGRAM_DEFAULT_CHAT_ID:7175652199}
   email:
     enabled: ${EMAIL_ENABLED:true}
-    company-email: ${COMPANY_DEFAULT_EMAIL:${SPRING_MAIL_USERNAME:rf==tg05122006@gmail.com}}
+    company-email: ${COMPANY_DEFAULT_EMAIL:${SPRING_MAIL_USERNAME:tg05122006@gmail.com}}
 
 mqtt:
   broker: ${MQTT_BROKER_URL:ssl://${MQTT_SERVER:21b6b6e71fc04cdb8ab80f011561b98b.s1.eu.hivemq.cloud}:${MQTT_PORT:8883}}
