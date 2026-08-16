@@ -266,6 +266,8 @@ const App = () => {
         if (activeDevice) return activeDevice.deviceCode;
         // Fallback nếu DB rỗng - đổi thành mã thiết bị thật của em
         return 'LED_1';
+        // const activeDevice = danhSachThietBi.find(d => d.isOnline || d.isActive);
+        // return activeDevice ? activeDevice.deviceCode : 'DEV-CAM-001';
     };
 
     const xuLyBamDen = async () => {

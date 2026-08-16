@@ -48,8 +48,9 @@ axiosClient.interceptors.response.use(
 
     async (error) => {
         const originalRequest = error.config;
-
+        //nếu lỗi và chưa từng được gửi lại (chưa resfresh token)
         if (error.response?.status === 401 && !originalRequest._retry) {
+            //nếu không phải api đầu tiên
             if (isRefreshing) {
                 return new Promise((resolve, reject) => {
                     failedQueue.push({ resolve, reject });
@@ -61,10 +62,11 @@ axiosClient.interceptors.response.use(
                 });
             }
 
+            //nếu là api đầu tiên
             originalRequest._retry = true;
             isRefreshing = true;
 
-            try {
+            try { //thử refresh token
                 const refreshToken = localStorage.getItem('refreshToken');
 
                 const response = await axios.post(
@@ -86,7 +88,7 @@ axiosClient.interceptors.response.use(
 
                 return axiosClient(originalRequest);
 
-            } catch (refreshError) {
+            } catch (refreshError) { //nếu vẫn lỗi -> refreshToken hết hạn -> đăng nhập lại
                 processQueue(refreshError, null);
 
                 localStorage.removeItem('accessToken');
