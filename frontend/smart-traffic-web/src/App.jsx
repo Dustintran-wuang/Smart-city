@@ -89,18 +89,18 @@ const App = () => {
         return () => clearInterval(interval);
     }, [isLoggedIn]);
 
-    useEffect(() => {
-        let interval;
-        if (isLoggedIn) {
-            fetchDashboardData();
-            fetchDevices();
-            interval = setInterval(() => {
-                fetchDashboardData();
-                fetchDevices();
-            }, 5000);
-        }
-        return () => clearInterval(interval);
-    }, [isLoggedIn]);
+    // useEffect(() => {
+    //     let interval;
+    //     if (isLoggedIn) {
+    //         fetchDashboardData();
+    //         fetchDevices();
+    //         interval = setInterval(() => {
+    //             fetchDashboardData();
+    //             fetchDevices();
+    //         }, 5000);
+    //     }
+    //     return () => clearInterval(interval);
+    // }, [isLoggedIn]);
 
     const fetchDashboardData = async () => {
         try {
@@ -265,7 +265,7 @@ const App = () => {
         const activeDevice = danhSachThietBi.find(d => d.isActive || d.status === 'ACTIVE');
         if (activeDevice) return activeDevice.deviceCode;
         // Fallback nếu DB rỗng - đổi thành mã thiết bị thật của em
-        return 'LED_1';
+        return 'DEV001';
         // const activeDevice = danhSachThietBi.find(d => d.isOnline || d.isActive);
         // return activeDevice ? activeDevice.deviceCode : 'DEV-CAM-001';
     };

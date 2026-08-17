@@ -48,12 +48,12 @@ const DeviceLog = ({ danhSachThietBi, setIsDeviceLogOpen }) => {
                                         <td style={{ padding: '12px', color: '#a0aec0' }}>{formatTime(device.lastHeartbeat)}</td>
                                         <td style={{ padding: '12px', textAlign: 'center' }}>
                                             <span style={{
-                                                backgroundColor: device.isActive ? 'rgba(72, 187, 120, 0.2)' : 'rgba(245, 101, 101, 0.2)',
-                                                color: device.isActive ? '#48bb78' : '#f56565',
-                                                border: `1px solid ${device.isActive ? '#48bb78' : '#f56565'}`,
+                                                backgroundColor: device.isOnline ? 'rgba(72, 187, 120, 0.2)' : 'rgba(245, 101, 101, 0.2)',
+                                                color: device.isOnline ? '#48bb78' : '#f56565',
+                                                border: `1px solid ${device.isOnline ? '#48bb78' : '#f56565'}`,
                                                 padding: '4px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold'
                                             }}>
-                                                {device.isActive ? 'Trực tuyến' : 'Ngoại tuyến'}
+                                                {device.isOnline ? 'Trực tuyến' : 'Ngoại tuyến'}
                                             </span>
                                         </td>
                                     </tr>

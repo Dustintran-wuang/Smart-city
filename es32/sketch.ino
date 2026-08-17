@@ -69,6 +69,7 @@ void sendHeartbeat() {
   bool isLightOn  = isBlinking || (digitalRead(LED_PINS[0]) == HIGH);
 
   JsonDocument doc;
+  doc["device_id"]    = "DEV001";
   doc["status"]       = "ONLINE";
   doc["alert_status"] = (isAlertActive || isLightOn || isBuzzerOn) ? "ON" : "OFF";
   doc["buzzer"]       = isBuzzerOn ? "ON" : "OFF";
