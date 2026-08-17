@@ -6,17 +6,20 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
-// ================= 1. CẤU HÌNH PHẦN CỨNG =================
+// ================= 1. CẤU HÌNH PHẦN CỨNG & MÃ THIẾT BỊ =================
 const int LED_PINS[] = {25, 26, 27, 14};
 const int NUM_LEDS = 4;
 const int BUZZER_PIN = 32; 
 
+// Mã định danh thiết bị ESP32 hiện tại
+const char* DEVICE_ID = "DEV001";
+
 // Cấu trúc Topic Flexible:
-// 1. Đèn LED (4 LED coi như là 1 cụm): smartcity/device/+/light  (Ví dụ: smartcity/device/LED_1/light, smartcity/device/ALL/light, ...) -> Bật/Tắt cả 4 LED cùng lúc
-// 2. Còi Buzzer:                       smartcity/device/+/buzzer (Ví dụ: smartcity/device/BUZZER_1/buzzer, smartcity/device/ALL/buzzer, ...) -> Bật/Tắt còi Buzzer
+// 1. Đèn LED (4 LED coi như là 1 cụm): smartcity/device/+/light  (Ví dụ: smartcity/device/LED_1/light, smartcity/device/DEV001/light, ...) -> Bật/Tắt cả 4 LED cùng lúc
+// 2. Còi Buzzer:                       smartcity/device/+/buzzer (Ví dụ: smartcity/device/BUZZER_1/buzzer, smartcity/device/DEV001/buzzer, ...) -> Bật/Tắt còi Buzzer
 // 3. Tổng quát (Alert / All):          smartcity/device/+/alert hoặc smartcity/device/+/all
-// 4. Wildcard Sub:                     smartcity/device/+/+
-// 5. Heartbeat:                        smartcity/device/heartbeat
+// 4. Wildcard Sub điều khiển:          smartcity/device/+/+
+// 5. Heartbeat thiết bị:               smartcity/device/DEV001/heartbeat (Khớp với wildcard backend: smartcity/device/+/heartbeat)
 
 // ================= 2. CẤU HÌNH HIVEMQ CLOUD (TLS 8883) =================
 const char* MQTT_SERVER = "21b6b6e71fc04cdb8ab80f011561b98b.s1.eu.hivemq.cloud"; // Tự cấu hình
@@ -27,8 +30,8 @@ const char* MQTT_USER   = "UserTest";
 const char* MQTT_PASS   = "1234567890"; 
 
 // MQTT Topics
-const char* TOPIC_CONTROL_WILDCARD = "smartcity/device/+/+";       // Sub: Bắt toàn bộ các topic điều khiển
-const char* TOPIC_HEARTBEAT        = "smartcity/device/heartbeat"; // Pub: Cập nhật trạng thái hiện tại của thiết bị
+const char* TOPIC_CONTROL_WILDCARD = "smartcity/device/+/+";                   // Sub: Bắt toàn bộ các topic điều khiển
+const char* TOPIC_HEARTBEAT        = "smartcity/device/DEV001/heartbeat";      // Pub: Heartbeat theo format smartcity/device/{device_id}/heartbeat
 
 // ================= 3. CẤU HÌNH SOFTAP & CAPTIVE PORTAL =================
 const char* AP_SSID = "SmartCity_Setup";
@@ -69,7 +72,7 @@ void sendHeartbeat() {
   bool isLightOn  = isBlinking || (digitalRead(LED_PINS[0]) == HIGH);
 
   JsonDocument doc;
-  doc["device_id"]    = "DEV001";
+  doc["device_id"]    = DEVICE_ID;
   doc["status"]       = "ONLINE";
   doc["alert_status"] = (isAlertActive || isLightOn || isBuzzerOn) ? "ON" : "OFF";
   doc["buzzer"]       = isBuzzerOn ? "ON" : "OFF";
@@ -207,7 +210,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 void reconnectMQTT() {
   while (!mqttClient.connected() && !isAPMode) {
     Serial.print("Dang ket noi HiveMQ Cloud TLS (Port 8883)...");
-    String clientId = "ESP32_Device_";
+    String clientId = "ESP32_" + String(DEVICE_ID) + "_";
     clientId += String(random(0xffff), HEX);
 
     if (mqttClient.connect(clientId.c_str(), MQTT_USER, MQTT_PASS)) {
