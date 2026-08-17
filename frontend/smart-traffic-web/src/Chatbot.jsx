@@ -12,7 +12,7 @@ const Chatbot = ({
     console.log("Dữ liệu lịch sử cảnh báo nhận từ DB:", lichSuCanhBao);
 
     const getEarValue = (item) => item?.ear_value ?? item?.earValue ?? item?.ear ?? 'N/A';
-    const getThreshold = (item) => item?.ear_threshold ?? item?.earThreshold ?? item?.threshold ?? 0.25;
+    const getThreshold = (item) => item?.ear_threshold ?? item?.earThreshold ?? item?.threshold ?? 0.20;
     const getTime = (item) => item?.created_at ?? item?.createdAt ?? item?.time ?? item?.timestamp ?? 'Không rõ';
     const getStatus = (item) => (item?.is_acknowledged ?? item?.isAcknowledged) ? 'Đã xử lý' : 'Chưa xử lý';
 
@@ -146,7 +146,7 @@ NHIỆM VỤ CỦA BẠN:
                     fontWeight: 'bold'
                 }}
             >
-                <span>Trợ Lý AI EAR</span>
+                <span>Chatbot</span>
                 <button
                     onClick={() => setIsChatbotOpen(false)}
                     style={{
