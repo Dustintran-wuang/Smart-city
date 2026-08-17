@@ -108,19 +108,10 @@ void setup()
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
 
-  if (psramFound())
-  {
-    config.frame_size = FRAMESIZE_QQVGA;
-    config.jpeg_quality = 20;
-    config.fb_count = 1;
-  }
-  else
-  {
-    Serial.println("-> Không tìm thấy PSRAM, chuyển về độ phân giải thấp!");
-    config.frame_size = FRAMESIZE_QQVGA;
-    config.jpeg_quality = 20;
-    config.fb_count = 1;
-  }
+  config.frame_size = FRAMESIZE_QQVGA;
+  config.jpeg_quality = 30;
+  config.fb_count = 2;
+
 
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK)
