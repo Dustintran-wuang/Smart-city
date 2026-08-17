@@ -19,6 +19,7 @@ public class DeviceResponse {
 	private String status;
 	private LocalDateTime createdAt;
 	private LocalDateTime updatedAt;
+	private LocalDateTime lastHeartbeat;
 	private Boolean isOnline;
 
 }

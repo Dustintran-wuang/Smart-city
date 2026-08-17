@@ -98,6 +98,7 @@ public class DeviceServiceImpl implements DeviceService {
 		}
 		return DeviceResponse.builder().id(device.getId()).isOnline(isOnline).deviceCode(device.getDeviceCode())
 				.vehiclePlate(device.getLocation()).status(device.getIsActive() ? "ACTIVE" : "INACTIVE")
+				.lastHeartbeat(device.getLastHeartbeat())
 				.createdAt(device.getCreatedAt()).build();
 	}
 }
